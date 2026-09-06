@@ -300,8 +300,8 @@
     this._spawnTick(now);
     this._moveEnemies(dt, now);
     this._moveCirclesAndFight(dt, now);
-    this._separate(this.enemies, this.config.enemies.movement.separation, dt);
-    this._separate(this.circles, this.config.viewers.separation, dt);
+    this._collideAll(this.enemies, dt);
+    this._collideAll(this.circles, dt);
     this._cleanup();
 
     this.emit('tick', { at: now, dt: dt });
@@ -454,8 +454,10 @@
           if (now - enemy.lastAttackAt >= enemy.attackIntervalMs) {
             enemy.lastAttackAt = now;
             this._damageCircle(circle, enemy.attack);
-            if (circle.dead) break;      // 力尽きた円はもう動かない
           }
+          // 敵にも跳ね返る。倒した相手からは跳ねません (もう居ないので)。
+          if (!enemy.dead && !circle.dead) this._resolveContact(circle, enemy, dt);
+          if (circle.dead) break;        // 力尽きた円はもう動かない
         }
       }
 
@@ -550,45 +552,135 @@
   };
 
   /**
-   * 重なったままの停止を防ぐ。
+   * 2 つの円をぶつける。
    *
-   * 重なっている 2 つを、めり込んだぶんだけ押し返します。完全に同じ座標に
-   * いる場合は距離が 0 になって向きが決まらないので、そのときだけ乱数でずらします。
+   *   1. めり込んだぶんだけ押し離す (重なったまま止まらないように)
+   *   2. ぶつかった向きへ跳ね返す (ビリヤードと同じ)
+   *
+   * 質量は半径から決めます (massFromRadius)。大きい円ほど押し勝つので、
+   * ボスに小さい円が当たれば、跳ね返るのは小さいほうだけです。
+   *
+   * 跳ね返ったあとに速さを戻す (keepSpeed) のは、当たりどころによって
+   * 円が止まってしまわないようにするためです。向きだけが変わり、
+   * 速さは変わらないので、動きは等速のまま読めます。
    */
-  BattleEngine.prototype._separate = function (list, strength, dt) {
-    for (var i = 0; i < list.length; i += 1) {
+  BattleEngine.prototype._resolveContact = function (a, b, dt) {
+    var collision = this.config.collision;
+
+    var dx = b.position.x - a.position.x;
+    var dy = b.position.y - a.position.y;
+    var min = a.radius + b.radius;
+    var distSq = dx * dx + dy * dy;
+    if (distSq >= min * min) return false;
+
+    var dist = Math.sqrt(distSq);
+    if (dist === 0) {
+      // 完全に同じ位置。向きが決まらないので、そのときだけ乱数で決める。
+      var heading = this.random() * Math.PI * 2;
+      dx = Math.cos(heading);
+      dy = Math.sin(heading);
+      dist = 1;
+    }
+
+    var nx = dx / dist;
+    var ny = dy / dist;
+
+    // --- 1. 押し離す
+    var overlap = (min - dist) / 2;
+    var push = Math.min(overlap, collision.separation * dt);
+    a.position.x -= nx * push;
+    a.position.y -= ny * push;
+    b.position.x += nx * push;
+    b.position.y += ny * push;
+    this._contain(a);
+    this._contain(b);
+
+    if (!collision.bounce) return true;
+
+    // --- 2. 跳ね返す
+    var rvx = b.velocity.x - a.velocity.x;
+    var rvy = b.velocity.y - a.velocity.y;
+    var along = rvx * nx + rvy * ny;
+    if (along > 0) return true;          // すでに離れつつある。二重に跳ねさせない。
+
+    var ma = collision.massFromRadius ? a.radius * a.radius : 1;
+    var mb = collision.massFromRadius ? b.radius * b.radius : 1;
+    var impulse = -(1 + collision.restitution) * along / (1 / ma + 1 / mb);
+
+    a.velocity.x -= impulse * nx / ma;
+    a.velocity.y -= impulse * ny / ma;
+    b.velocity.x += impulse * nx / mb;
+    b.velocity.y += impulse * ny / mb;
+
+    if (collision.keepSpeed) {
+      this._restoreSpeed(a);
+      this._restoreSpeed(b);
+    }
+    return true;
+  };
+
+  /** 向きはそのままに、速さを元に戻す (止まった円を作らない)。 */
+  BattleEngine.prototype._restoreSpeed = function (entity) {
+    var v = entity.velocity;
+    var length = Math.sqrt(v.x * v.x + v.y * v.y);
+    if (length === 0) {
+      var heading = this.random() * Math.PI * 2;
+      v.x = Math.cos(heading) * entity.speed;
+      v.y = Math.sin(heading) * entity.speed;
+      return;
+    }
+    var scale = entity.speed / length;
+    v.x *= scale;
+    v.y *= scale;
+  };
+
+  /**
+   * 同じ種類どうしの当たりを全部見る。
+   *
+   * 総当たりだと円の数の 2 乗になり、数百個で毎フレーム間に合わなくなります。
+   * フィールドを格子に切り、隣の升だけを見ることで、円が増えても
+   * 1 つあたりの計算量が増えないようにしています。
+   */
+  BattleEngine.prototype._collideAll = function (list, dt) {
+    if (list.length < 2) return;
+
+    var i;
+    var maxRadius = 0;
+    for (i = 0; i < list.length; i += 1) {
+      if (list[i].radius > maxRadius) maxRadius = list[i].radius;
+    }
+
+    var cell = Math.max(maxRadius * 2, 1);
+    var columns = Math.max(1, Math.ceil(this.field.width / cell));
+    var buckets = {};
+
+    for (i = 0; i < list.length; i += 1) {
+      var entity = list[i];
+      var cx = Math.floor(entity.position.x / cell);
+      var cy = Math.floor(entity.position.y / cell);
+      var key = cy * (columns + 2) + cx;
+      (buckets[key] || (buckets[key] = [])).push(entity);
+      entity._cx = cx;
+      entity._cy = cy;
+    }
+
+    // 同じ升と「右 / 右下 / 下 / 左下」だけを見る。
+    // 残り 4 方向は相手側から見るので、1 組を二度調べません。
+    var NEIGHBORS = [[1, 0], [-1, 1], [0, 1], [1, 1]];
+
+    for (i = 0; i < list.length; i += 1) {
       var a = list[i];
-      for (var j = i + 1; j < list.length; j += 1) {
-        var b = list[j];
-        var dx = b.position.x - a.position.x;
-        var dy = b.position.y - a.position.y;
-        var min = a.radius + b.radius;
+      var own = buckets[a._cy * (columns + 2) + a._cx];
 
-        if (Math.abs(dx) > min || Math.abs(dy) > min) continue;   // 粗い判定で先に落とす
+      var j;
+      for (j = own.indexOf(a) + 1; j < own.length; j += 1) {
+        this._resolveContact(a, own[j], dt);
+      }
 
-        var distSq = dx * dx + dy * dy;
-        if (distSq >= min * min) continue;
-
-        var dist = Math.sqrt(distSq);
-        if (dist === 0) {
-          var heading = this.random() * Math.PI * 2;
-          dx = Math.cos(heading);
-          dy = Math.sin(heading);
-          dist = 1;
-        }
-
-        var overlap = (min - dist) / 2;
-        var push = Math.min(overlap, strength * dt);
-        var nx = dx / dist;
-        var ny = dy / dist;
-
-        a.position.x -= nx * push;
-        a.position.y -= ny * push;
-        b.position.x += nx * push;
-        b.position.y += ny * push;
-
-        this._contain(a);
-        this._contain(b);
+      for (var n = 0; n < NEIGHBORS.length; n += 1) {
+        var near = buckets[(a._cy + NEIGHBORS[n][1]) * (columns + 2) + (a._cx + NEIGHBORS[n][0])];
+        if (!near) continue;
+        for (j = 0; j < near.length; j += 1) this._resolveContact(a, near[j], dt);
       }
     }
   };

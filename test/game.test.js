@@ -277,3 +277,109 @@ test('プロフィール画像が見える大きさになっている', () => {
   const diameterPx = config.viewers.base.radius * 2 * (1080 / config.field.width);
   assert.ok(diameterPx >= 40, `視聴者円の直径が ${Math.round(diameterPx)}px しかない`);
 });
+
+test('円同士はぶつかると跳ね返る', () => {
+  const { engine, advance } = setup({
+    config: { enemies: { spawn: { initialCount: 0, minAlive: 0, maxAlive: 0, intervalMs: 10_000_000 } } }
+  });
+
+  // 正面衝突させる
+  const a = engine.spawnCircle({ ownerId: 'a', ownerName: 'a', strength: 1 });
+  const b = engine.spawnCircle({ ownerId: 'b', ownerName: 'b', strength: 1 });
+  a.position.x = 460; a.position.y = 500; a.velocity.x = a.speed;  a.velocity.y = 0;
+  b.position.x = 540; b.position.y = 500; b.velocity.x = -b.speed; b.velocity.y = 0;
+
+  advance(1_000, { steps: 60 });
+
+  assert.ok(a.velocity.x < 0, '左の円が跳ね返っていない');
+  assert.ok(b.velocity.x > 0, '右の円が跳ね返っていない');
+  assert.ok(a.position.x < b.position.x, 'すり抜けている');
+});
+
+test('跳ね返っても速さは変わらない (等速のまま)', () => {
+  const { engine, advance } = setup({
+    config: { enemies: { spawn: { initialCount: 0, minAlive: 0, maxAlive: 0, intervalMs: 10_000_000 } } }
+  });
+
+  const a = engine.spawnCircle({ ownerId: 'a', ownerName: 'a', strength: 1 });
+  const b = engine.spawnCircle({ ownerId: 'b', ownerName: 'b', strength: 1 });
+  // 斜めにぶつける (真正面より速さが変わりやすい当たり方)
+  a.position.x = 470; a.position.y = 480; a.velocity.x = a.speed; a.velocity.y = 0;
+  b.position.x = 530; b.position.y = 500; b.velocity.x = 0; b.velocity.y = -b.speed;
+
+  advance(2_000, { steps: 120 });
+
+  [a, b].forEach((circle) => {
+    const speed = Math.hypot(circle.velocity.x, circle.velocity.y);
+    assert.ok(Math.abs(speed - circle.speed) < 0.001,
+      `速さが ${speed.toFixed(1)} に変わっている (元は ${circle.speed})`);
+  });
+});
+
+test('大きい円ほど押し勝つ (小さい円だけが跳ね返る)', () => {
+  const { engine, advance } = setup({
+    config: { enemies: { spawn: { initialCount: 0, minAlive: 0, maxAlive: 0, intervalMs: 10_000_000 } } }
+  });
+
+  const small = engine.spawnCircle({ ownerId: 'a', ownerName: 'a', strength: 1 });
+  const big = engine.spawnCircle({ ownerId: 'b', ownerName: 'b', strength: 60 });
+  small.position.x = 460; small.position.y = 500; small.velocity.x = small.speed; small.velocity.y = 0;
+  big.position.x = 560; big.position.y = 500; big.velocity.x = 0; big.velocity.y = 0;
+  const bigHeadingBefore = { x: big.velocity.x, y: big.velocity.y };
+
+  advance(1_000, { steps: 60 });
+
+  assert.ok(small.velocity.x < 0, '小さい円が跳ね返っていない');
+  assert.ok(Math.hypot(big.velocity.x - bigHeadingBefore.x, big.velocity.y - bigHeadingBefore.y) < small.speed,
+    '大きい円が小さい円と同じだけ飛ばされている');
+});
+
+test('円が敵にぶつかっても跳ね返る', () => {
+  const { engine, advance } = setup({
+    config: { enemies: { spawn: { initialCount: 0, minAlive: 0, maxAlive: 0, intervalMs: 10_000_000 } } }
+  });
+
+  const enemy = engine.spawnEnemy('boss');
+  enemy.position.x = 560; enemy.position.y = 500; enemy.velocity.x = 0; enemy.velocity.y = 0;
+
+  const circle = engine.spawnCircle({ ownerId: 'a', ownerName: 'a', strength: 1 });
+  circle.position.x = 420; circle.position.y = 500; circle.velocity.x = circle.speed; circle.velocity.y = 0;
+
+  advance(1_500, { steps: 90 });
+
+  assert.ok(circle.velocity.x < 0, '敵から跳ね返っていない');
+  assert.ok(enemy.hp < enemy.maxHp, 'ぶつかったのにダメージが入っていない');
+});
+
+test('円を大量に置いても 1 フレームの計算が跳ね上がらない', () => {
+  const { engine, advance } = setup();
+  for (let i = 0; i < 400; i += 1) {
+    engine.spawnCircle({ ownerId: 'u' + (i % 20), ownerName: 'u' + (i % 20), strength: 1 });
+  }
+  assert.strictEqual(engine.circles.length, 400, '上限で消えている');
+
+  const started = process.hrtime.bigint();
+  advance(2_000, { steps: 120 });
+  const perFrame = Number(process.hrtime.bigint() - started) / 1e6 / 120;
+
+  // 総当たり (400^2/2 = 8 万組) だと 60fps に間に合わない。
+  // 格子に切って隣だけを見るので、1 フレーム 1ms を大きく下回るはず。
+  assert.ok(perFrame < 3, `1 フレーム ${perFrame.toFixed(2)}ms かかっている`);
+});
+
+test('設定で跳ね返りを切れる (押し離すだけに戻る)', () => {
+  const { engine, advance } = setup({
+    config: {
+      collision: { bounce: false },
+      enemies: { spawn: { initialCount: 0, minAlive: 0, maxAlive: 0, intervalMs: 10_000_000 } }
+    }
+  });
+
+  const a = engine.spawnCircle({ ownerId: 'a', ownerName: 'a', strength: 1 });
+  const b = engine.spawnCircle({ ownerId: 'b', ownerName: 'b', strength: 1 });
+  a.position.x = 470; a.position.y = 500; a.velocity.x = a.speed; a.velocity.y = 0;
+  b.position.x = 530; b.position.y = 500; b.velocity.x = a.speed; b.velocity.y = 0;
+
+  advance(500, { steps: 30 });
+  assert.ok(a.velocity.x > 0, '跳ね返らない設定なのに向きが変わっている');
+});
