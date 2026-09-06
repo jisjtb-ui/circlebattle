@@ -65,6 +65,17 @@
     this._noticeTimer = null;
 
     var self = this;
+    engine.on('item:taken', function (taken) {
+      self._bursts.push({
+        x: taken.circle.position.x,
+        y: taken.circle.position.y,
+        radius: taken.circle.radius,
+        color: taken.item.color,
+        at: taken.at || Date.now()
+      });
+      if (self._bursts.length > 40) self._bursts.shift();
+    });
+
     engine.on('enemy:killed', function (kill) {
       self._bursts.push({
         x: kill.enemy.position.x,
@@ -118,6 +129,10 @@
     var state = this.engine.getState();
     var i;
 
+    // アイテムは一番下に描く。円と重なっても、拾う側が隠れないように。
+    for (i = 0; i < state.items.length; i += 1) {
+      this._drawItem(ctx, state.items[i], scale, now);
+    }
     for (i = 0; i < state.enemies.length; i += 1) {
       this._drawEnemy(ctx, state.enemies[i], scale);
     }
@@ -235,6 +250,66 @@
       ctx.stroke();
     }
     ctx.restore();
+  };
+
+  /**
+   * アイテム。ゆっくり回る菱形で、円とも敵とも見た目を変えています。
+   * 消える少し前から点滅させて、取り逃しが分かるようにしています。
+   */
+  Renderer.prototype._drawItem = function (ctx, item, scale, now) {
+    var x = item.position.x * scale;
+    var y = item.position.y * scale;
+    var r = item.radius * scale;
+    var age = (now - item.bornAt) / 1000;
+
+    // 残りが短くなったら点滅
+    var remaining = item.expiresAt - now;
+    var alpha = remaining < 4000 ? 0.35 + 0.65 * Math.abs(Math.sin(now / 160)) : 1;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(x, y);
+    ctx.rotate(age * 0.6);
+
+    // 光の輪
+    ctx.beginPath();
+    ctx.arc(0, 0, r * (1.25 + Math.sin(now / 300) * 0.08), 0, Math.PI * 2);
+    ctx.strokeStyle = item.color;
+    ctx.globalAlpha = alpha * 0.35;
+    ctx.lineWidth = Math.max(1.5, r * 0.12);
+    ctx.stroke();
+    ctx.globalAlpha = alpha;
+
+    // 菱形
+    ctx.beginPath();
+    ctx.moveTo(0, -r);
+    ctx.lineTo(r, 0);
+    ctx.lineTo(0, r);
+    ctx.lineTo(-r, 0);
+    ctx.closePath();
+    ctx.fillStyle = item.color;
+    ctx.globalAlpha = alpha * 0.85;
+    ctx.fill();
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = Math.max(1.5, r * 0.1);
+    ctx.strokeStyle = '#ffffff';
+    ctx.stroke();
+    ctx.restore();
+
+    // 名前は回さず、菱形の下に置く (中に入れると形からはみ出て読めない)
+    if (r > 12) {
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.font = 'bold ' + Math.round(r * 0.5) + 'px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.lineWidth = Math.max(2, r * 0.16);
+      ctx.strokeStyle = 'rgba(6, 8, 20, 0.9)';
+      ctx.strokeText(item.label, x, y + r * 1.35);      // 暗い縁取りで背景から浮かせる
+      ctx.fillStyle = item.color;
+      ctx.fillText(item.label, x, y + r * 1.35);
+      ctx.restore();
+    }
   };
 
   Renderer.prototype._drawBursts = function (ctx, scale, now) {

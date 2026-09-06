@@ -279,6 +279,62 @@
     },
 
     /**
+     * アイテム。
+     *
+     * 一定間隔でフィールドに置かれ、**視聴者の円だけが拾えます**。
+     * 敵は触れても素通りします (敵が強くなると視聴者の不利益になるため)。
+     *
+     * 効果は**良くなるものだけ**です。エンジン側も「今の値より大きいほう」しか
+     * 採らないので、拾って弱くなることはありません。
+     *
+     * types に 1 行足せば種類を増やせます。
+     */
+    items: {
+      enabled: true,
+
+      spawn: {
+        /** 置く間隔 (ミリ秒)。 */
+        intervalMs: 14000,
+        /** 起動してから最初に置くまで。 */
+        firstDelayMs: 8000,
+        /** 同時にフィールドへ置く数の上限。 */
+        maxAlive: 3
+      },
+
+      /** 拾われないまま消えるまでの時間。0 で消えません。 */
+      lifetimeMs: 30000,
+      /** 既定の大きさ。types 側で個別に指定もできます。 */
+      radius: 30,
+
+      types: [
+        {
+          id: 'power',
+          label: 'POWER',
+          color: '#facc15',
+          weight: 1,
+          /**
+           * 100 コインのギフトと同じ強さまで引き上げます。
+           * 換算はギフトと同じ式 (viewers.gift) を通すので、
+           * ギフトの設定を変えればアイテムも一緒に変わります。
+           * すでにそれより強い円は弱くなりません (全快だけします)。
+           */
+          effect: { type: 'strength', giftCoins: 100 }
+        },
+        {
+          id: 'speed',
+          label: 'SPEED',
+          color: '#38bdf8',
+          weight: 1,
+          /**
+           * 速くなります。何度拾っても、その円の元の速さの
+           * maxMultiplier 倍までで止まります (速すぎて見えなくならないように)。
+           */
+          effect: { type: 'speed', multiplier: 1.6, maxMultiplier: 2.4 }
+        }
+      ]
+    },
+
+    /**
      * 効果音。
      *
      * 音は WebAudio でその場で作ります (音源ファイルは要りません)。
@@ -338,6 +394,17 @@
             { wave: 'square', from: 660, to: 660, duration: 0.08, gain: 0.16 },
             { delay: 0.08, wave: 'square', from: 880, to: 880, duration: 0.08, gain: 0.16 },
             { delay: 0.16, wave: 'square', from: 1320, to: 1320, duration: 0.22, gain: 0.18 }
+          ]
+        },
+
+        /** アイテムを拾った。 */
+        item: {
+          kind: 'sequence',
+          minIntervalMs: 200,
+          steps: [
+            { wave: 'triangle', from: 880, to: 880, duration: 0.07, gain: 0.18 },
+            { delay: 0.07, wave: 'triangle', from: 1320, to: 1320, duration: 0.07, gain: 0.18 },
+            { delay: 0.14, wave: 'triangle', from: 1760, to: 1760, duration: 0.18, gain: 0.2 }
           ]
         },
 

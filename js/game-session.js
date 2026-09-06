@@ -279,7 +279,8 @@
     var coins = Math.max(0, Number(event.value) || 0);
     this.stats.gifts += 1;
 
-    var strength = gift.baseStrength + coins * gift.strengthPerCoin;
+    // 換算式は game.js に 1 つだけ置いてあります (アイテムからも同じ式を使うため)
+    var strength = this.engine.strengthFromGift(coins);
     return this.spawnFor(user, {
       count: gift.circles,
       strength: strength,

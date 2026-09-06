@@ -15,7 +15,7 @@ TikTok LIVE 連動のバトルゲーム。
 並ぶのは常に個人です。
 
 TikTok の接続部分は **KAWAII VS BEAUTIFUL / tikhub で作ったものをそのまま使います**
-(→ [9. 既存システムとの関係](#9-既存システムとの関係))。
+(→ [10. 既存システムとの関係](#10-既存システムとの関係))。
 
 ---
 
@@ -34,12 +34,12 @@ TikTok の接続部分は **KAWAII VS BEAUTIFUL / tikhub で作ったものを�
 | `index.html?ranking=right` | ランキングの位置を固定する (`right` / `below` / `auto`) |
 
 **TikTok の実配信と繋ぐ場合**は tikhub を起動し、出てくる URL を開きます
-(→ [9.3](#93-tikhub-から配信する))。
+(→ [10.3](#103-tikhub-から配信する))。
 
 ルールのテスト:
 
 ```
-npm test     # 91 件。ブラウザ不要
+npm test     # 104 件。ブラウザ不要
 npm run check
 ```
 
@@ -54,6 +54,8 @@ npm run check
 | **シェア** | 中くらいの円が 1 個 |
 | **ギフト** | コイン価値ぶん強い円が 1 個 |
 | コメント | 何も起きません (将来のコマンド用に受け取るだけ) |
+
+フィールドにはときどき**アイテム**が落ちます。視聴者の円が触れると拾えます（→ [5. アイテム](#5-アイテム)）。
 
 - いいねの端数は**ユーザーごとに**次へ持ち越します。7 + 5 = 12 で 1 個出て、2 が残ります。
 - 円は**足し算**です。10 個出ている人が 100 LIKE すれば 20 個になります。
@@ -138,7 +140,42 @@ TikTok から取れたプロフィール画像を、そのまま円の中に描�
 
 ---
 
-## 5. 止まらない画面
+## 5. アイテム
+
+ときどきフィールドにアイテムが落ちます。**拾えるのは視聴者の円だけ**で、
+敵は触れても素通りします（敵が強くなると視聴者の不利益になるため）。
+
+| アイテム | 効果 |
+| --- | --- |
+| **POWER** | **100 コインのギフトと同じ強さ**まで引き上げ、HP を全快 |
+| **SPEED** | 速くなる（何度拾っても、その円の元の速さの 2.4 倍まで） |
+
+- **拾って弱くなることはありません。** エンジンは「今の値より大きいほう」しか採らないので、
+  HP も攻撃力も大きさも速さも下がりません。すでに 100 コイン相当より強い円が POWER を
+  拾った場合も、弱くはならず HP が全快します。
+- POWER の強さはギフトと**同じ換算式**（`viewers.gift`）を通します。ギフトの設定を変えれば
+  アイテムも一緒に変わるので、片方だけずれることはありません。
+- 14 秒ごとに 1 つ、同時に 3 つまで。30 秒で消えます（消える前は点滅します）。
+- 拾われないまま消えても、誰も損をしません。
+
+種類は `js/config.js` の `items.types` に 1 行足すだけで増やせます。
+
+```js
+{ id: 'mega', label: 'MEGA', color: '#a855f7', weight: 1,
+  effect: { type: 'strength', giftCoins: 500 } }
+```
+
+実行中に足すこともできます。
+
+```js
+CB.engine.addItemType({ id: 'event', label: 'EVENT', color: '#fff', weight: 0,
+                        effect: { type: 'speed', multiplier: 2, maxMultiplier: 3 } });
+CB.engine.spawnItem('event');     // その場に 1 つ置く
+```
+
+---
+
+## 6. 止まらない画面
 
 **このゲームの最重要仕様です。** TikTok のイベントが 1 件も来なくても、画面は動き続けます。
 
@@ -157,7 +194,7 @@ TikTok から取れたプロフィール画像を、そのまま円の中に描�
 
 ---
 
-## 6. 効果音
+## 7. 効果音
 
 音源ファイルは要りません。**WebAudio でその場で合成**しているので、
 `file://` で開いても、素材を配らなくても鳴ります。
@@ -170,6 +207,7 @@ TikTok から取れたプロフィール画像を、そのまま円の中に描�
 | LIKE で円が出た | 小さな上がり音 |
 | FOLLOW / SHARE | 2 音 |
 | GIFT | 3 音の上がり |
+| アイテムを拾った | 3 音の上がり |
 | ランキング 1 位が入れ替わった | ベル |
 
 - 撃破もダメージも 1 秒に何十回も起きるので、**音ごとの最短間隔**と
@@ -190,11 +228,11 @@ CB.sfx.setVolume(0.2);  // 音量
 
 ---
 
-## 7. 設定
+## 8. 設定
 
 調整値はすべて [`js/config.js`](js/config.js) にあります。ゲームのコードに数値はありません。
 
-### 7.1 敵の種類を足す
+### 8.1 敵の種類を足す
 
 `enemies.types` に 1 行足すだけです。ゲーム側は id を見ないので、それだけで出てきます。
 
@@ -217,7 +255,7 @@ CB.engine.spawnEnemy('event-boss');
 | ELITE | 1000 | +20 |
 | BOSS | 5000 | +100 |
 
-### 7.2 円の強さ
+### 8.2 円の強さ
 
 イベントごとに違うのは **strength という 1 つの数字だけ**です。
 HP / 攻撃力 / 半径 / 速度はそこから計算されます (`viewers.base` と `viewers.scaling`)。
@@ -233,7 +271,7 @@ GIFT   strength = baseStrength + coins * strengthPerCoin
 新しいギフトが増えても何もしなくて構いません
 (特定のギフトだけ重み付けを変えたいときは `gifts.byId` / `gifts.byName`)。
 
-### 7.3 撃破ポイントの配り方
+### 8.3 撃破ポイントの配り方
 
 ```js
 scoring: {
@@ -249,7 +287,7 @@ scoring: {
 どちらでも動くように、敵は**常に「誰がどれだけ削ったか」を記録**しています。
 KILL 数だけは 1 人にしか付きません (割ると整数でなくなるため)。
 
-### 7.4 ランキングの基準
+### 8.4 ランキングの基準
 
 ```js
 ranking: { sortBy: 'score', order: 'desc', size: 10 }
@@ -263,7 +301,7 @@ CB.leaderboard.setSort('kills');
 
 ---
 
-## 8. 作り
+## 9. 作り
 
 ```
 TikTok Event  ->  Game Event  ->  Battle Entity  ->  Enemy  ->  Battle  ->  Leaderboard
@@ -274,7 +312,7 @@ TikTok Event  ->  Game Event  ->  Battle Entity  ->  Enemy  ->  Battle  ->  Lead
 | `js/tiktok-adapter.js` | 中継サーバーからイベントを受け取る | **はい** |
 | `js/event-router.js` | TikTok の語彙をゲームイベントへ翻訳する | **はい (ここが最後)** |
 | `js/game-session.js` | イベント -> 円の生成 / ポイントの配分 | いいえ |
-| `js/game.js` | 敵の生成・移動・衝突・戦闘 (バトルエンジン) | いいえ |
+| `js/game.js` | 敵とアイテムの生成・移動・衝突・戦闘 (バトルエンジン) | いいえ |
 | `js/leaderboard.js` | ユーザーごとの成績とランキング | いいえ |
 | `js/demo.js` | 誰も居ない間の仮の視聴者 | いいえ |
 | `js/avatars.js` | プロフィール画像のキャッシュ | いいえ |
@@ -292,7 +330,7 @@ TikTok Event  ->  Game Event  ->  Battle Entity  ->  Enemy  ->  Battle  ->  Lead
 将来足せるように分けてあるもの: 敵の種類 / ボス / イベントボス / ランキング報酬 /
 ユーザーレベル / 装備 / 特殊攻撃 / ギフト専用攻撃 / 視聴者同士の戦闘 / PvP / 複数 LIVE 接続。
 
-### 8.1 視聴者の円が持つ情報
+### 9.1 視聴者の円が持つ情報
 
 ```js
 { id, ownerId, ownerName, displayName, profileImageUrl, sourceEvent,
@@ -300,7 +338,7 @@ TikTok Event  ->  Game Event  ->  Battle Entity  ->  Enemy  ->  Battle  ->  Lead
   position: { x, y }, velocity: { x, y }, kills, damage, bornAt }
 ```
 
-### 8.2 ランキングが持つ情報
+### 9.2 ランキングが持つ情報
 
 ```js
 { userId, userName, profileImageUrl, kills, damage, score, lastActivity }
@@ -308,11 +346,11 @@ TikTok Event  ->  Game Event  ->  Battle Entity  ->  Enemy  ->  Battle  ->  Lead
 
 ---
 
-## 9. 既存システムとの関係
+## 10. 既存システムとの関係
 
 **TikTok 接続は作り直していません。** 既存の 2 つをそのまま使います。
 
-### 9.1 再利用しているもの
+### 10.1 再利用しているもの
 
 | 元 | 何を | どう使ったか |
 | --- | --- | --- |
@@ -324,14 +362,14 @@ tikhub に 1 つだけ足したもの: **プロフィール画像の取り出し
 (`normalizeUser` に `profileImageUrl` を追加)。既存のフィールドは変えていないので、
 KAWAII VS BEAUTIFUL は今までどおり動きます。
 
-### 9.2 新しく作ったもの
+### 10.2 新しく作ったもの
 
 `js/config.js` / `js/event-router.js` (SHARE とプロフィール画像に対応した版) /
 `js/game.js` / `js/game-session.js` / `js/leaderboard.js` / `js/demo.js` /
 `js/avatars.js` / `js/audio.js` / `js/renderer.js` / `js/controls.js` / `js/main.js` /
 `index.html` / `css/style.css`
 
-### 9.3 tikhub から配信する
+### 10.3 tikhub から配信する
 
 tikhub は同じ場所に並んでいるゲームのフォルダを**全部**探して配信します。
 KAWAII VS BEAUTIFUL と両方置いていれば、起動時に両方の URL が出ます。
@@ -353,7 +391,7 @@ KAWAII VS BEAUTIFUL と両方置いていれば、起動時に両方の URL が�
 
 画面下のパネルに LIVE の URL / `@ユーザー名` を貼って CONNECT でも繋げます。
 
-### 9.4 受け取っているイベント
+### 10.4 受け取っているイベント
 
 `COMMENT` / `LIKE` / `FOLLOW` / `SHARE` / `GIFT` と、
 `USER ID` / `USERNAME` / `PROFILE IMAGE`。
@@ -367,7 +405,7 @@ CB.session.on('comment', (c) => console.log(c.user.uniqueId, c.text));
 
 ---
 
-## 10. 繋がらないとき
+## 11. 繋がらないとき
 
 画面右上が「中継サーバー未接続」のままのときは、括弧の中に**どこを見にいっているか**が出ます。
 
@@ -398,7 +436,7 @@ CB.session.on('comment', (c) => console.log(c.user.uniqueId, c.text));
 
 ---
 
-## 11. コンソールから試す
+## 12. コンソールから試す
 
 ```js
 // 本番と同じ経路で 1 件流し込む
@@ -408,6 +446,7 @@ CB.tiktok.handleEvent({ type: 'share',  user: { uniqueId: 'taro' } });
 CB.tiktok.handleEvent({ type: 'gift',   user: { uniqueId: 'taro' }, diamondCount: 100 });
 
 CB.engine.spawnEnemy('boss');      // 敵を出す
+CB.engine.spawnItem('power');      // アイテムを置く
 CB.leaderboard.setSort('kills');   // ランキングの基準を変える
 CB.sfx.toggle();                   // 効果音の入 / 切
 CB.reset();                        // 全部やり直す

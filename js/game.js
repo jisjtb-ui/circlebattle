@@ -45,6 +45,19 @@
   }
 
   /**
+   * ギフトのコイン価値 -> 円の強さ。
+   *
+   *   strength = baseStrength + coins * strengthPerCoin
+   *
+   * GIFT イベントからも、アイテム (「100 コインギフト相当」) からも
+   * ここを通します。式が 2 箇所にあると、片方だけ変えたときにずれるためです。
+   */
+  function strengthFromGift(coins, viewers) {
+    var gift = viewers.gift;
+    return gift.baseStrength + Math.max(0, Number(coins) || 0) * gift.strengthPerCoin;
+  }
+
+  /**
    * @param {object} [options] { config, now, random }
    */
   function BattleEngine(options) {
@@ -60,21 +73,32 @@
 
     this.enemies = [];
     this.circles = [];
+    /** フィールドに落ちているアイテム。視聴者の円だけが拾えます。 */
+    this.items = [];
+    this.itemTypes = (this.config.items && this.config.items.types || []).slice();
 
     this.stats = {
       defeated: 0,        // 倒した敵の総数 (画面の ENEMIES DEFEATED)
       spawned: 0,
       circlesSpawned: 0,
-      damage: 0
+      damage: 0,
+      itemsTaken: 0
     };
 
     this._seq = 0;
     this._lastUpdate = null;
     this._nextSpawnAt = null;
+    this._nextItemAt = null;
     this._listeners = {};
   }
 
   BattleEngine.strengthToStats = strengthToStats;
+  BattleEngine.strengthFromGift = strengthFromGift;
+
+  /** ギフトのコイン価値 -> 強さ。GIFT イベントもアイテムもここを通します。 */
+  BattleEngine.prototype.strengthFromGift = function (coins) {
+    return strengthFromGift(coins, this.config.viewers);
+  };
 
   // ------------------------------------------------------------- events
 
@@ -226,6 +250,8 @@
       attack: stats.attack,
       radius: stats.radius,
       speed: stats.speed,
+      /** 生まれたときの速さ。速度アイテムの上限をここから決めます。 */
+      baseSpeed: stats.speed,
       attackIntervalMs: stats.attackIntervalMs,
       position: {
         x: spec.x != null ? spec.x : stats.radius + this.random() * (this.field.width - stats.radius * 2),
@@ -260,6 +286,158 @@
     return doomed.length;
   };
 
+  // -------------------------------------------------------------- items
+
+  /**
+   * アイテムの種類を足す。敵と同じで、config に 1 行足すだけでも増やせます。
+   */
+  BattleEngine.prototype.addItemType = function (type) {
+    this.itemTypes.push(type);
+    return this;
+  };
+
+  BattleEngine.prototype.getItemType = function (id) {
+    for (var i = 0; i < this.itemTypes.length; i += 1) {
+      if (this.itemTypes[i].id === id) return this.itemTypes[i];
+    }
+    return null;
+  };
+
+  BattleEngine.prototype.pickItemType = function () {
+    var total = 0;
+    var i;
+    for (i = 0; i < this.itemTypes.length; i += 1) {
+      total += Math.max(0, Number(this.itemTypes[i].weight) || 0);
+    }
+    if (total <= 0) return this.itemTypes[0] || null;
+
+    var roll = this.random() * total;
+    for (i = 0; i < this.itemTypes.length; i += 1) {
+      roll -= Math.max(0, Number(this.itemTypes[i].weight) || 0);
+      if (roll < 0) return this.itemTypes[i];
+    }
+    return this.itemTypes[this.itemTypes.length - 1];
+  };
+
+  /**
+   * アイテムを 1 つ置く。
+   *
+   * 置く場所はフィールドの内側だけで、壁際には寄せません。
+   * 壁に張り付いていると、跳ね返る円が触れにくくなるためです。
+   */
+  BattleEngine.prototype.spawnItem = function (typeId, at) {
+    var settings = this.config.items;
+    var type = typeId ? this.getItemType(typeId) : null;
+    if (!type) type = this.pickItemType();
+    if (!type) return null;
+
+    var now = at != null ? at : this.now();
+    var radius = type.radius || settings.radius;
+    var margin = radius * 3;
+
+    var item = {
+      id: this._id('item'),
+      typeId: type.id,
+      label: type.label || type.id,
+      color: type.color,
+      radius: radius,
+      effect: type.effect,
+      position: {
+        x: margin + this.random() * (this.field.width - margin * 2),
+        y: margin + this.random() * (this.field.height - margin * 2)
+      },
+      bornAt: now,
+      /** 拾われないまま残り続けないように、時間で消えます。 */
+      expiresAt: settings.lifetimeMs > 0 ? now + settings.lifetimeMs : Infinity
+    };
+
+    this.items.push(item);
+    this.emit('item:spawn', item);
+    return item;
+  };
+
+  /** 一定間隔でアイテムを置き、時間切れのものを片付ける。 */
+  BattleEngine.prototype._itemsTick = function (now) {
+    var settings = this.config.items;
+    if (!settings || !settings.enabled) return;
+
+    for (var i = this.items.length - 1; i >= 0; i -= 1) {
+      if (now >= this.items[i].expiresAt) {
+        var expired = this.items.splice(i, 1)[0];
+        this.emit('item:expired', expired);
+      }
+    }
+
+    if (this._nextItemAt == null) this._nextItemAt = now + settings.spawn.firstDelayMs;
+    while (now >= this._nextItemAt) {
+      if (this.items.length < settings.spawn.maxAlive) this.spawnItem(null, now);
+      this._nextItemAt += settings.spawn.intervalMs;
+    }
+  };
+
+  /**
+   * アイテムの効果をかける。
+   *
+   * **視聴者に不利になることはしません。** 弱くなる値は 1 つも書けないよう、
+   * どの値も「今の値と比べて大きいほう」しか採りません。
+   * 例えば強くなると本来は少し遅くなりますが、アイテムでは遅くなりません。
+   */
+  BattleEngine.prototype._applyItem = function (circle, item, now) {
+    var viewers = this.config.viewers;
+    var effect = item.effect || {};
+    var before = {
+      strength: circle.strength, hp: circle.hp, maxHp: circle.maxHp,
+      attack: circle.attack, radius: circle.radius, speed: circle.speed
+    };
+
+    if (effect.type === 'strength') {
+      // 「100 コインギフト相当の強さ」。ギフトと同じ式を通します。
+      var strength = effect.strength != null
+        ? effect.strength
+        : strengthFromGift(effect.giftCoins, viewers);
+
+      var stats = strengthToStats(Math.max(circle.strength, strength), viewers);
+      circle.strength = Math.max(circle.strength, stats.strength);
+      circle.maxHp = Math.max(circle.maxHp, stats.hp);
+      circle.attack = Math.max(circle.attack, stats.attack);
+      circle.radius = Math.max(circle.radius, stats.radius);
+      circle.speed = Math.max(circle.speed, stats.speed);
+      // 拾ったごほうびとして全快させる (減ることはありません)
+      circle.hp = circle.maxHp;
+
+    } else if (effect.type === 'speed') {
+      var cap = circle.baseSpeed * (effect.maxMultiplier || 1);
+      circle.speed = Math.max(circle.speed, Math.min(circle.speed * effect.multiplier, cap));
+      this._restoreSpeed(circle);
+    }
+
+    this.stats.itemsTaken += 1;
+    this.emit('item:taken', {
+      item: item, circle: circle, before: before, at: now,
+      owner: {
+        ownerId: circle.ownerId, ownerName: circle.ownerName,
+        displayName: circle.displayName, profileImageUrl: circle.profileImageUrl,
+        demo: circle.demo
+      }
+    });
+  };
+
+  /**
+   * 拾えるのは視聴者の円だけです。敵は触れても素通りします
+   * (敵が強くなると視聴者の不利益になるため)。
+   */
+  BattleEngine.prototype._collectItems = function (circle, now) {
+    for (var i = this.items.length - 1; i >= 0; i -= 1) {
+      var item = this.items[i];
+      var dx = item.position.x - circle.position.x;
+      var dy = item.position.y - circle.position.y;
+      if (dx * dx + dy * dy > (item.radius + circle.radius) * (item.radius + circle.radius)) continue;
+
+      this.items.splice(i, 1);
+      this._applyItem(circle, item, now);
+    }
+  };
+
   BattleEngine.prototype._removeCircle = function (circle, reason) {
     var index = this.circles.indexOf(circle);
     if (index === -1) return;
@@ -275,6 +453,9 @@
     var now = at != null ? at : this.now();
     this._lastUpdate = now;
     this._nextSpawnAt = now + this.config.enemies.spawn.intervalMs;
+    // 最初のアイテムは起動から firstDelayMs 後。ここで決めておくと、
+    // 最初の 1 フレームが何ミリ秒だったかに左右されません。
+    if (this.config.items) this._nextItemAt = now + this.config.items.spawn.firstDelayMs;
 
     for (var i = 0; i < this.config.enemies.spawn.initialCount; i += 1) {
       this.spawnEnemy(null, now);
@@ -298,6 +479,7 @@
     if (dt <= 0) return this;
 
     this._spawnTick(now);
+    this._itemsTick(now);
     this._moveEnemies(dt, now);
     this._moveCirclesAndFight(dt, now);
     this._collideAll(this.enemies, dt);
@@ -474,6 +656,7 @@
       circle.position.x += circle.velocity.x * dt;
       circle.position.y += circle.velocity.y * dt;
       this._contain(circle);
+      if (this.items.length) this._collectItems(circle, now);
     }
   };
 
@@ -707,6 +890,7 @@
       field: this.field,
       enemies: this.enemies,
       circles: this.circles,
+      items: this.items,
       defeated: this.stats.defeated,
       enemiesAlive: this.enemies.length,
       circlesAlive: this.circles.length,
@@ -718,9 +902,11 @@
   BattleEngine.prototype.reset = function (at) {
     this.enemies = [];
     this.circles = [];
-    this.stats = { defeated: 0, spawned: 0, circlesSpawned: 0, damage: 0 };
+    this.items = [];
+    this.stats = { defeated: 0, spawned: 0, circlesSpawned: 0, damage: 0, itemsTaken: 0 };
     this._lastUpdate = null;
     this._nextSpawnAt = null;
+    this._nextItemAt = null;
     this.start(at);
     return this;
   };
@@ -728,8 +914,13 @@
   global.CB = global.CB || {};
   global.CB.BattleEngine = BattleEngine;
   global.CB.strengthToStats = strengthToStats;
+  global.CB.strengthFromGift = strengthFromGift;
 
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { BattleEngine: BattleEngine, strengthToStats: strengthToStats };
+    module.exports = {
+      BattleEngine: BattleEngine,
+      strengthToStats: strengthToStats,
+      strengthFromGift: strengthFromGift
+    };
   }
 })(typeof window !== 'undefined' ? window : this);

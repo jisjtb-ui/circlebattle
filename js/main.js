@@ -81,6 +81,11 @@
       if (removed.reason === 'defeated') sfx.play('lose');
     });
 
+    engine.on('item:taken', function (taken) {
+      sfx.play('item');
+      renderer.showNotice('@' + taken.owner.ownerName + ' → ' + taken.item.label);
+    });
+
     session.on('spawn', function (spawn) {
       if (!spawn.count) return;
       var byEvent = { LIKE: 'spawn', FOLLOW: 'follow', SHARE: 'share', GIFT: 'gift' };
