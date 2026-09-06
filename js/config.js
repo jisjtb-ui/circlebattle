@@ -60,13 +60,14 @@
      *   points           … 倒したときに視聴者へ入る撃破ポイント
      *   weight           … 出現しやすさ (相対値)
      *   color            … 画面上の色
+     *   killPitch        … 撃破音の高さ。大きい敵ほど低くする (省略すると 1)
      */
     enemies: {
       types: [
-        { id: 'normal', label: 'NORMAL', hp: 100,  radius: 20, speed: 58, attack: 6,  attackIntervalMs: 700, points: 1,   weight: 62, color: '#67e8f9' },
-        { id: 'strong', label: 'STRONG', hp: 300,  radius: 28, speed: 48, attack: 12, attackIntervalMs: 700, points: 5,   weight: 24, color: '#fbbf24' },
-        { id: 'elite',  label: 'ELITE',  hp: 1000, radius: 40, speed: 38, attack: 26, attackIntervalMs: 650, points: 20,  weight: 11, color: '#f472b6' },
-        { id: 'boss',   label: 'BOSS',   hp: 5000, radius: 66, speed: 26, attack: 60, attackIntervalMs: 600, points: 100, weight: 3,  color: '#ef4444' }
+        { id: 'normal', label: 'NORMAL', hp: 100,  radius: 20, speed: 58, attack: 6,  attackIntervalMs: 700, points: 1,   weight: 62, color: '#67e8f9', killPitch: 1.45 },
+        { id: 'strong', label: 'STRONG', hp: 300,  radius: 28, speed: 48, attack: 12, attackIntervalMs: 700, points: 5,   weight: 24, color: '#fbbf24', killPitch: 1.15 },
+        { id: 'elite',  label: 'ELITE',  hp: 1000, radius: 40, speed: 38, attack: 26, attackIntervalMs: 650, points: 20,  weight: 11, color: '#f472b6', killPitch: 0.88 },
+        { id: 'boss',   label: 'BOSS',   hp: 5000, radius: 66, speed: 26, attack: 60, attackIntervalMs: 600, points: 100, weight: 3,  color: '#ef4444', killPitch: 0.6 }
       ],
 
       spawn: {
@@ -210,6 +211,81 @@
       pointsPerDamage: 0,
       /** mode:'damage' のとき、この割合未満の貢献は無視する。 */
       minShare: 0.02
+    },
+
+    /**
+     * 効果音。
+     *
+     * 音は WebAudio でその場で作ります (音源ファイルは要りません)。
+     * 鳴らし方はここに全部書いてあり、audio.js は書かれたとおりに鳴らすだけです。
+     *
+     *   kind 'tone'     … 音程のある音。from -> to へ滑らせる
+     *   kind 'noise'    … 雑音を帯域で削った打撃音
+     *   kind 'sequence' … 上のものを delay 秒ずらして重ねる
+     *
+     *   minIntervalMs … その音の最短間隔。撃破が連続しても潰れないように
+     */
+    audio: {
+      enabled: true,
+      /** 0.0 〜 1.0。配信では BGM とのバランスで下げてください。 */
+      volume: 0.35,
+      /** 1 秒あたりに鳴らす音の総数の上限。 */
+      maxPerSecond: 22,
+
+      sfx: {
+        /** 敵に当たった。1 番よく鳴るので短く小さく。 */
+        hit: { kind: 'noise', freq: 1500, q: 1.1, duration: 0.045, gain: 0.09, minIntervalMs: 70 },
+
+        /** 敵を倒した。敵の killPitch で高さが変わります。 */
+        kill: { kind: 'tone', wave: 'sawtooth', from: 620, to: 170, duration: 0.22, gain: 0.26, minIntervalMs: 55 },
+
+        /** 視聴者の円が力尽きた。 */
+        lose: { kind: 'tone', wave: 'square', from: 220, to: 80, duration: 0.12, gain: 0.09, minIntervalMs: 120 },
+
+        /** LIKE で円が出た。 */
+        spawn: { kind: 'tone', wave: 'sine', from: 500, to: 900, duration: 0.09, gain: 0.13, minIntervalMs: 70 },
+
+        /** FOLLOW。2 音。 */
+        follow: {
+          kind: 'sequence',
+          minIntervalMs: 140,
+          steps: [
+            { wave: 'triangle', from: 660, to: 660, duration: 0.09, gain: 0.2 },
+            { delay: 0.09, wave: 'triangle', from: 990, to: 990, duration: 0.14, gain: 0.2 }
+          ]
+        },
+
+        /** SHARE。FOLLOW と同じ形で高さだけ変えたもの。 */
+        share: {
+          kind: 'sequence',
+          minIntervalMs: 140,
+          steps: [
+            { wave: 'triangle', from: 880, to: 880, duration: 0.09, gain: 0.18 },
+            { delay: 0.09, wave: 'triangle', from: 1320, to: 1320, duration: 0.14, gain: 0.18 }
+          ]
+        },
+
+        /** GIFT。3 音の上がり。 */
+        gift: {
+          kind: 'sequence',
+          minIntervalMs: 180,
+          steps: [
+            { wave: 'square', from: 660, to: 660, duration: 0.08, gain: 0.16 },
+            { delay: 0.08, wave: 'square', from: 880, to: 880, duration: 0.08, gain: 0.16 },
+            { delay: 0.16, wave: 'square', from: 1320, to: 1320, duration: 0.22, gain: 0.18 }
+          ]
+        },
+
+        /** 1 位が入れ替わった。 */
+        rank: {
+          kind: 'sequence',
+          minIntervalMs: 1200,
+          steps: [
+            { wave: 'sine', from: 1046, to: 1046, duration: 0.3, gain: 0.18 },
+            { delay: 0.07, wave: 'sine', from: 1568, to: 1568, duration: 0.4, gain: 0.14 }
+          ]
+        }
+      }
     },
 
     /** ランキング。 */

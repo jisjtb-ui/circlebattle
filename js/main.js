@@ -28,6 +28,7 @@
     var params = new URLSearchParams(global.location.search || '');
 
     if (params.get('demo') === '0') config.demo.enabled = false;
+    if (params.get('sound') === '0' || params.get('mute') === '1') config.audio.enabled = false;
     if (params.get('ranking')) config.ui.rankingPosition = params.get('ranking');
     // 'auto' のときは CSS 側 (画面の縦横比) に任せる
     if (config.ui.rankingPosition !== 'auto') {
@@ -62,6 +63,49 @@
 
     // --- 誰も反応していない間だけ動く仮の視聴者
     var demo = new CB.DemoDirector(session, { config: config });
+
+    // --- 効果音
+    //
+    // ゲームのルールは音を知りません。engine と session が出す
+    // 「起きたこと」を受け取って、鳴らすかどうかは SfxPlayer が決めます。
+    var sfx = new CB.SfxPlayer({ config: config });
+
+    engine.on('damage', function () { sfx.play('hit'); });
+
+    engine.on('enemy:killed', function (kill) {
+      var type = engine.getEnemyType(kill.typeId);
+      sfx.play('kill', { pitch: (type && type.killPitch) || 1 });
+    });
+
+    engine.on('circle:removed', function (removed) {
+      if (removed.reason === 'defeated') sfx.play('lose');
+    });
+
+    session.on('spawn', function (spawn) {
+      if (!spawn.count) return;
+      var byEvent = { LIKE: 'spawn', FOLLOW: 'follow', SHARE: 'share', GIFT: 'gift' };
+      sfx.play(byEvent[spawn.sourceEvent] || 'spawn');
+    });
+
+    // 1 位が入れ替わったときだけ鳴らす (順位が動くたびに鳴らすとうるさい)
+    var leaderId = null;
+    leaderboard.on(function (board) {
+      var top = board.top(1)[0];
+      var id = top ? top.userId : null;
+      if (id && leaderId && id !== leaderId) sfx.play('rank');
+      leaderId = id;
+    });
+
+    // ブラウザは操作前の自動再生を止める。止められている間だけバッジを出し、
+    // 最初のクリック / キー操作で鳴らし始める。
+    var mutedBadge = document.getElementById('muted');
+    sfx.onBlocked(function (blocked) {
+      if (mutedBadge) mutedBadge.hidden = !blocked || !sfx.enabled;
+    });
+    ['click', 'keydown', 'touchstart'].forEach(function (name) {
+      global.addEventListener(name, function () { sfx.resume(); }, { passive: true });
+    });
+    sfx.resume();
 
     // --- TikTok の受信口
     var tiktok = new CB.TikTokAdapter(router, { liveId: LIVE_ID });
@@ -103,7 +147,8 @@
       engine: engine,
       session: session,
       leaderboard: leaderboard,
-      renderer: renderer
+      renderer: renderer,
+      sfx: sfx
     });
 
     // --- 配信画面モード
@@ -142,6 +187,7 @@
     global.CB.avatars = avatars;
     global.CB.controls = controls;
     global.CB.demo = demo;
+    global.CB.sfx = sfx;
     global.CB.tiktok = tiktok;
     global.CB.LIVE_ID = LIVE_ID;
 

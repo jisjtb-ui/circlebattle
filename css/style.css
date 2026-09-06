@@ -94,6 +94,23 @@ body {
 
 .hud__meta b { color: var(--text); font-variant-numeric: tabular-nums; }
 
+.hud__right {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.muted {
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(250, 204, 21, 0.5);
+  background: rgba(250, 204, 21, 0.12);
+  color: #fde68a;
+  font-size: clamp(9px, 1.4vmin, 12px);
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
 .status {
   display: inline-flex;
   align-items: center;
@@ -330,6 +347,7 @@ body[data-ranking="below"] .battle {
 
 .panel input[type="text"] { width: 130px; }
 .panel input[type="number"] { width: 70px; }
+.panel input[type="range"] { width: 90px; accent-color: var(--accent); }
 #connect-input { flex: 1 1 240px; }
 
 .panel button {

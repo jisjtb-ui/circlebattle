@@ -19,6 +19,7 @@
     this.session = options.session;
     this.leaderboard = options.leaderboard;
     this.renderer = options.renderer;
+    this.sfx = options.sfx || null;
 
     this._bind();
   }
@@ -73,6 +74,31 @@
       self.leaderboard.reset();
       self.session.reset();
     });
+
+    // 音の入 / 切と音量。配信中に BGM とぶつかったら下げられるように。
+    var mute = $('btn-mute');
+    if (mute && this.sfx) {
+      var paint = function () {
+        mute.textContent = self.sfx.enabled ? 'SOUND ON' : 'SOUND OFF';
+        mute.setAttribute('aria-pressed', String(self.sfx.enabled));
+      };
+      paint();
+      mute.addEventListener('click', function () {
+        self.sfx.toggle();
+        self.sfx.resume();
+        var badge = $('muted');
+        if (badge && !self.sfx.enabled) badge.hidden = true;
+        paint();
+      });
+    }
+
+    var volume = $('sfx-volume');
+    if (volume && this.sfx) {
+      volume.value = String(Math.round(this.sfx.volume * 100));
+      volume.addEventListener('input', function () {
+        self.sfx.setVolume(Number(volume.value) / 100);
+      });
+    }
 
     var sort = $('sort-select');
     if (sort) {

@@ -20,7 +20,11 @@
   <header class="hud">
     <div class="hud__head">
       <h1 class="hud__title" id="title">CIRCLE BATTLE</h1>
-      <span class="status" id="status" data-state="offline"><i></i><span id="status-text">…</span></span>
+      <span class="hud__right">
+        <!-- ブラウザに自動再生を止められている間だけ出る -->
+        <span class="muted" id="muted" hidden>🔇 クリックで音が出ます</span>
+        <span class="status" id="status" data-state="offline"><i></i><span id="status-text">…</span></span>
+      </span>
     </div>
 
     <div class="hud__defeated">
@@ -74,6 +78,8 @@
       <button type="button" id="btn-crowd">CROWD</button>
       <button type="button" id="btn-boss">SPAWN BOSS</button>
       <button type="button" id="btn-reset">RESET</button>
+      <button type="button" id="btn-mute">SOUND ON</button>
+      <label>VOL <input id="sfx-volume" type="range" min="0" max="100" step="5"></label>
       <label>SORT
         <select id="sort-select">
           <option value="score">score</option>
@@ -92,6 +98,7 @@
 <script src="js/event-router.js"></script>
 <script src="js/demo.js"></script>
 <script src="js/avatars.js"></script>
+<script src="js/audio.js"></script>
 <script src="js/renderer.js"></script>
 <script src="js/controls.js"></script>
 <script src="js/tiktok-adapter.js"></script>

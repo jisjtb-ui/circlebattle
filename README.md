@@ -15,7 +15,7 @@ TikTok LIVE 連動のバトルゲーム。
 並ぶのは常に個人です。
 
 TikTok の接続部分は **KAWAII VS BEAUTIFUL / tikhub で作ったものをそのまま使います**
-(→ [7. 既存システムとの関係](#7-既存システムとの関係))。
+(→ [8. 既存システムとの関係](#8-既存システムとの関係))。
 
 ---
 
@@ -29,16 +29,17 @@ TikTok の接続部分は **KAWAII VS BEAUTIFUL / tikhub で作ったものを�
 | `index.html?obs=1` | 配信画面のみ (OBS 用) |
 | `index.html?offline=1` | TikTok に繋がない |
 | `index.html?demo=0` | デモ視聴者を出さない |
+| `index.html?sound=0` | 効果音を鳴らさない (`?mute=1` も同じ) |
 | `index.html?sort=kills` | ランキングの基準を変える (`score` / `kills` / `damage`) |
 | `index.html?ranking=right` | ランキングの位置を固定する (`right` / `below` / `auto`) |
 
 **TikTok の実配信と繋ぐ場合**は tikhub を起動し、出てくる URL を開きます
-(→ [7.3](#73-tikhub-から配信する))。
+(→ [8.3](#83-tikhub-から配信する))。
 
 ルールのテスト:
 
 ```
-npm test     # 56 件。ブラウザ不要
+npm test     # 67 件。ブラウザ不要
 npm run check
 ```
 
@@ -103,11 +104,44 @@ TikTok LIVE の縦画面 (9:16) を想定した配置です。
 
 ---
 
-## 5. 設定
+## 5. 効果音
+
+音源ファイルは要りません。**WebAudio でその場で合成**しているので、
+`file://` で開いても、素材を配らなくても鳴ります。
+
+| いつ | 音 |
+| --- | --- |
+| 敵に当たった | 短い打撃音 (いちばんよく鳴るので小さめ) |
+| 敵を倒した | 「ドーン」。**敵が大きいほど低い音**になります |
+| 視聴者の円が力尽きた | 低い短音 |
+| LIKE で円が出た | 小さな上がり音 |
+| FOLLOW / SHARE | 2 音 |
+| GIFT | 3 音の上がり |
+| ランキング 1 位が入れ替わった | ベル |
+
+- 撃破もダメージも 1 秒に何十回も起きるので、**音ごとの最短間隔**と
+  **1 秒あたりの上限**で間引いています (`config.audio`)。潰れて聞こえなくなりません。
+- 敵ごとの音の高さは `enemies.types[].killPitch` です。敵を足すときに一緒に決められます。
+- ブラウザは操作前の自動再生を止めます。止められている間は画面に
+  「🔇 クリックで音が出ます」と出て、**最初のクリックで鳴り始めます**
+  (ゲームの進行は止まりません)。OBS のブラウザソースはそのまま鳴ります。
+- テストパネルの `SOUND ON` / `VOL` で切り替えと音量調整ができます。
+  配信中にコンソールからでも変えられます。
+
+```js
+CB.sfx.toggle();        // 入 / 切
+CB.sfx.setVolume(0.2);  // 音量
+```
+
+音量の初期値は `config.audio.volume` (既定 0.35)。BGM を流すなら下げてください。
+
+---
+
+## 6. 設定
 
 調整値はすべて [`js/config.js`](js/config.js) にあります。ゲームのコードに数値はありません。
 
-### 5.1 敵の種類を足す
+### 6.1 敵の種類を足す
 
 `enemies.types` に 1 行足すだけです。ゲーム側は id を見ないので、それだけで出てきます。
 
@@ -130,7 +164,7 @@ CB.engine.spawnEnemy('event-boss');
 | ELITE | 1000 | +20 |
 | BOSS | 5000 | +100 |
 
-### 5.2 円の強さ
+### 6.2 円の強さ
 
 イベントごとに違うのは **strength という 1 つの数字だけ**です。
 HP / 攻撃力 / 半径 / 速度はそこから計算されます (`viewers.base` と `viewers.scaling`)。
@@ -146,7 +180,7 @@ GIFT   strength = baseStrength + coins * strengthPerCoin
 新しいギフトが増えても何もしなくて構いません
 (特定のギフトだけ重み付けを変えたいときは `gifts.byId` / `gifts.byName`)。
 
-### 5.3 撃破ポイントの配り方
+### 6.3 撃破ポイントの配り方
 
 ```js
 scoring: {
@@ -162,7 +196,7 @@ scoring: {
 どちらでも動くように、敵は**常に「誰がどれだけ削ったか」を記録**しています。
 KILL 数だけは 1 人にしか付きません (割ると整数でなくなるため)。
 
-### 5.4 ランキングの基準
+### 6.4 ランキングの基準
 
 ```js
 ranking: { sortBy: 'score', order: 'desc', size: 10 }
@@ -176,7 +210,7 @@ CB.leaderboard.setSort('kills');
 
 ---
 
-## 6. 作り
+## 7. 作り
 
 ```
 TikTok Event  ->  Game Event  ->  Battle Entity  ->  Enemy  ->  Battle  ->  Leaderboard
@@ -191,6 +225,7 @@ TikTok Event  ->  Game Event  ->  Battle Entity  ->  Enemy  ->  Battle  ->  Lead
 | `js/leaderboard.js` | ユーザーごとの成績とランキング | いいえ |
 | `js/demo.js` | 誰も居ない間の仮の視聴者 | いいえ |
 | `js/avatars.js` | プロフィール画像のキャッシュ | いいえ |
+| `js/audio.js` | 効果音 (WebAudio で合成) | いいえ |
 | `js/renderer.js` | 画面 (canvas + DOM) | いいえ |
 | `js/config.js` | すべての調整値 | いいえ |
 
@@ -204,7 +239,7 @@ TikTok Event  ->  Game Event  ->  Battle Entity  ->  Enemy  ->  Battle  ->  Lead
 将来足せるように分けてあるもの: 敵の種類 / ボス / イベントボス / ランキング報酬 /
 ユーザーレベル / 装備 / 特殊攻撃 / ギフト専用攻撃 / 視聴者同士の戦闘 / PvP / 複数 LIVE 接続。
 
-### 6.1 視聴者の円が持つ情報
+### 7.1 視聴者の円が持つ情報
 
 ```js
 { id, ownerId, ownerName, displayName, profileImageUrl, sourceEvent,
@@ -212,7 +247,7 @@ TikTok Event  ->  Game Event  ->  Battle Entity  ->  Enemy  ->  Battle  ->  Lead
   position: { x, y }, velocity: { x, y }, kills, damage, bornAt }
 ```
 
-### 6.2 ランキングが持つ情報
+### 7.2 ランキングが持つ情報
 
 ```js
 { userId, userName, profileImageUrl, kills, damage, score, lastActivity }
@@ -220,11 +255,11 @@ TikTok Event  ->  Game Event  ->  Battle Entity  ->  Enemy  ->  Battle  ->  Lead
 
 ---
 
-## 7. 既存システムとの関係
+## 8. 既存システムとの関係
 
 **TikTok 接続は作り直していません。** 既存の 2 つをそのまま使います。
 
-### 7.1 再利用しているもの
+### 8.1 再利用しているもの
 
 | 元 | 何を | どう使ったか |
 | --- | --- | --- |
@@ -236,26 +271,36 @@ tikhub に 1 つだけ足したもの: **プロフィール画像の取り出し
 (`normalizeUser` に `profileImageUrl` を追加)。既存のフィールドは変えていないので、
 KAWAII VS BEAUTIFUL は今までどおり動きます。
 
-### 7.2 新しく作ったもの
+### 8.2 新しく作ったもの
 
 `js/config.js` / `js/event-router.js` (SHARE とプロフィール画像に対応した版) /
 `js/game.js` / `js/game-session.js` / `js/leaderboard.js` / `js/demo.js` /
-`js/avatars.js` / `js/renderer.js` / `js/controls.js` / `js/main.js` / `index.html` / `css/style.css`
+`js/avatars.js` / `js/audio.js` / `js/renderer.js` / `js/controls.js` / `js/main.js` /
+`index.html` / `css/style.css`
 
-### 7.3 tikhub から配信する
+### 8.3 tikhub から配信する
 
-tikhub は同じ場所に並んでいるゲームのフォルダを自動で探します。
-KAWAII VS BEAUTIFUL と両方置いている場合は、どちらを配信するか指定してください。
+tikhub は同じ場所に並んでいるゲームのフォルダを**全部**探して配信します。
+KAWAII VS BEAUTIFUL と両方置いていれば、起動時に両方の URL が出ます。
 
 ```
-npm start -- --game="../circlebattle"          # 実際の配信に繋ぐ
-npm run mock -- --game="../circlebattle"       # TikTok に繋がず動作確認
+起動:  npm start          （TikTok の実配信に繋ぐ）
+       npm run mock       （TikTok に繋がず動作確認）
+
+  ゲームが 2 つ見つかりました。使うほうの URL を開いてください
+      http://127.0.0.1:8787/kawaiivsbeautiful/   KAWAII vs BEAUTIFUL
+      http://127.0.0.1:8787/circlebattle/        CIRCLE BATTLE
 ```
 
-起動すると `http://127.0.0.1:8787/` が出ます。ブラウザで開けばそのまま遊べます。
+`http://127.0.0.1:8787/` を開くと選択画面が出ます。
+1 つに固定したいときは `npm start -- --game="../circlebattle"`。
+
+イベントの中継 (`/events`) は 1 本だけで、**どちらのゲームからでも同じものを受け取ります**。
+2 つ同時に開いて見比べることもできます。
+
 画面下のパネルに LIVE の URL / `@ユーザー名` を貼って CONNECT でも繋げます。
 
-### 7.4 受け取っているイベント
+### 8.4 受け取っているイベント
 
 `COMMENT` / `LIKE` / `FOLLOW` / `SHARE` / `GIFT` と、
 `USER ID` / `USERNAME` / `PROFILE IMAGE`。
@@ -269,7 +314,7 @@ CB.session.on('comment', (c) => console.log(c.user.uniqueId, c.text));
 
 ---
 
-## 8. コンソールから試す
+## 9. コンソールから試す
 
 ```js
 // 本番と同じ経路で 1 件流し込む
@@ -280,5 +325,6 @@ CB.tiktok.handleEvent({ type: 'gift',   user: { uniqueId: 'taro' }, diamondCount
 
 CB.engine.spawnEnemy('boss');      // 敵を出す
 CB.leaderboard.setSort('kills');   // ランキングの基準を変える
+CB.sfx.toggle();                   // 効果音の入 / 切
 CB.reset();                        // 全部やり直す
 ```
