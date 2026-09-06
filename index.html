@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CIRCLE BATTLE</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ============================================================
+     TikTok LIVE の縦画面を想定した配置。
+       上   : ENEMIES DEFEATED
+       中央 : 正方形のバトルフィールド
+       右/下: TOP 10 PLAYER (常時表示)
+     ?obs=1 でテストパネルを隠すと、そのまま配信画面になります。
+     ============================================================ -->
+<div class="app" id="app">
+
+  <header class="hud">
+    <div class="hud__head">
+      <h1 class="hud__title" id="title">CIRCLE BATTLE</h1>
+      <span class="status" id="status" data-state="offline"><i></i><span id="status-text">…</span></span>
+    </div>
+
+    <div class="hud__defeated">
+      <span class="hud__label">ENEMIES DEFEATED</span>
+      <span class="hud__value" id="defeated">0</span>
+    </div>
+
+    <div class="hud__meta">
+      <span>ENEMIES <b id="enemies-alive">0</b></span>
+      <span>CIRCLES <b id="circles-alive">0</b></span>
+      <span>PLAYERS <b id="players">0</b></span>
+    </div>
+  </header>
+
+  <main class="battle">
+    <div class="field-wrap">
+      <canvas id="field"></canvas>
+      <div class="notice" id="notice" hidden></div>
+    </div>
+
+    <aside class="ranking">
+      <h2 class="ranking__title">
+        TOP 10 PLAYER
+        <span class="ranking__metric" id="ranking-metric">SCORE</span>
+      </h2>
+      <ol class="ranking__list" id="ranking-list"></ol>
+      <p class="ranking__empty" id="ranking-empty">LIKE / FOLLOW / SHARE / GIFT で参加</p>
+    </aside>
+  </main>
+
+  <!-- 開発用。?obs=1 を付けると出ません。 -->
+  <section class="panel" id="panel">
+    <form class="panel__row panel__row--connect" id="connect-form">
+      <input id="connect-input" type="text" placeholder="LIVE の URL または @ユーザー名" autocomplete="off">
+      <button type="submit" id="connect-go">CONNECT</button>
+      <span class="panel__hint" id="connect-hint"></span>
+    </form>
+
+    <div class="panel__row">
+      <label>USER <input id="test-user" type="text" value="tester" autocomplete="off"></label>
+      <button type="button" id="btn-like10">LIKE x10</button>
+      <button type="button" id="btn-like100">LIKE x100</button>
+      <button type="button" id="btn-follow">FOLLOW</button>
+      <button type="button" id="btn-share">SHARE</button>
+      <label>GIFT <input id="gift-coins" type="number" value="10" min="1" step="1"></label>
+      <button type="button" id="btn-gift">SEND GIFT</button>
+      <button type="button" id="btn-comment">COMMENT</button>
+    </div>
+
+    <div class="panel__row">
+      <button type="button" id="btn-crowd">CROWD</button>
+      <button type="button" id="btn-boss">SPAWN BOSS</button>
+      <button type="button" id="btn-reset">RESET</button>
+      <label>SORT
+        <select id="sort-select">
+          <option value="score">score</option>
+          <option value="kills">kills</option>
+          <option value="damage">damage</option>
+        </select>
+      </label>
+    </div>
+  </section>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/leaderboard.js"></script>
+<script src="js/game.js"></script>
+<script src="js/game-session.js"></script>
+<script src="js/event-router.js"></script>
+<script src="js/demo.js"></script>
+<script src="js/avatars.js"></script>
+<script src="js/renderer.js"></script>
+<script src="js/controls.js"></script>
+<script src="js/tiktok-adapter.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "name": "circlebattle",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TikTok LIVE 連動ゲーム CIRCLE BATTLE - 視聴者の円が自動生成される敵を倒す",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "check": "node --check js/config.js && node --check js/game.js && node --check js/game-session.js && node --check js/event-router.js && node --check js/leaderboard.js && node --check js/demo.js && node --check js/avatars.js && node --check js/renderer.js && node --check js/controls.js && node --check js/tiktok-adapter.js && node --check js/main.js"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,349 @@
+/*
+ * style.css - 画面の見た目だけ。ゲームのルールはここには一切ありません。
+ *
+ * 想定は TikTok LIVE の縦画面 (9:16)。
+ * ランキングは縦画面ではフィールドの下、横長の画面では右に置きます。
+ * data-ranking="right" / "below" を <body> に付けると固定できます。
+ */
+
+:root {
+  --bg: #070714;
+  --bg-panel: rgba(18, 20, 44, 0.82);
+  --line: rgba(120, 140, 255, 0.22);
+  --text: #eef1ff;
+  --muted: #97a0c8;
+  --accent: #5eead4;
+  --danger: #ff5964;
+  --gap: clamp(6px, 1.4vmin, 16px);
+}
+
+* { box-sizing: border-box; }
+
+/* display を持つ要素にも hidden 属性を効かせる (ランキングの空行など) */
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, -apple-system, 'Hiragino Kaku Gothic ProN', sans-serif;
+  overflow: hidden;
+}
+
+body {
+  background-image:
+    radial-gradient(900px 600px at 20% -10%, rgba(94, 234, 212, 0.10), transparent 60%),
+    radial-gradient(900px 600px at 90% 110%, rgba(244, 114, 182, 0.12), transparent 60%);
+}
+
+.app {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: var(--gap);
+  padding: var(--gap);
+}
+
+/* ------------------------------------------------------------------ HUD */
+
+.hud { display: grid; gap: 4px; }
+
+.hud__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hud__title {
+  margin: 0;
+  font-size: clamp(16px, 3.2vmin, 30px);
+  letter-spacing: 0.18em;
+  font-weight: 800;
+}
+
+.hud__defeated {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.1;
+}
+
+.hud__label {
+  font-size: clamp(9px, 1.5vmin, 13px);
+  letter-spacing: 0.28em;
+  color: var(--muted);
+}
+
+.hud__value {
+  font-size: clamp(28px, 6.5vmin, 64px);
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 22px rgba(94, 234, 212, 0.45);
+}
+
+.hud__meta {
+  display: flex;
+  gap: 14px;
+  font-size: clamp(9px, 1.5vmin, 13px);
+  letter-spacing: 0.16em;
+  color: var(--muted);
+}
+
+.hud__meta b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: clamp(9px, 1.4vmin, 12px);
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.status i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #64748b;
+  box-shadow: 0 0 10px currentColor;
+}
+
+.status[data-state="live"] i { background: #22c55e; }
+.status[data-state="waiting"] i { background: #f59e0b; }
+.status[data-state="bridge"] i { background: #38bdf8; }
+.status[data-state="offline"] i { background: #64748b; }
+
+/* -------------------------------------------------------------- battle */
+
+.battle {
+  min-height: 0;
+  display: grid;
+  gap: var(--gap);
+  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.field-wrap {
+  position: relative;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  /* 下の 100cqh (この枠の高さ) を使うために必要 */
+  container-type: size;
+}
+
+/* フィールドは常に正方形。短い辺に合わせます。 */
+#field {
+  width: min(100%, 100cqh);
+  aspect-ratio: 1 / 1;
+  max-height: 100%;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 0 60px rgba(80, 120, 255, 0.16) inset;
+  background: #090a18;
+}
+
+.notice {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 16px;
+  border-radius: 999px;
+  background: rgba(10, 12, 30, 0.9);
+  border: 1px solid var(--line);
+  font-size: clamp(11px, 1.8vmin, 16px);
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+
+.notice--in { animation: notice-in 240ms ease-out; }
+
+@keyframes notice-in {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* ------------------------------------------------------------- ranking */
+
+.ranking {
+  min-height: 0;
+  /* 人数が増減しても枠の高さが動かないようにしておく (配信中のガタつき防止) */
+  min-block-size: clamp(170px, 23vh, 500px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: clamp(8px, 1.4vmin, 14px);
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.ranking__title {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: clamp(11px, 1.9vmin, 17px);
+  letter-spacing: 0.22em;
+  font-weight: 800;
+}
+
+.ranking__metric {
+  font-size: clamp(8px, 1.3vmin, 11px);
+  letter-spacing: 0.16em;
+  color: var(--accent);
+}
+
+.ranking__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+  grid-auto-rows: minmax(26px, 44px);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.rank {
+  --hue: 200;
+  display: grid;
+  grid-template-columns: 2.2ch auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  font-size: clamp(10px, 1.7vmin, 15px);
+  animation: rank-in 220ms ease-out;
+}
+
+@keyframes rank-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.rank:nth-child(1) { background: rgba(250, 204, 21, 0.16); }
+.rank:nth-child(2) { background: rgba(226, 232, 240, 0.13); }
+.rank:nth-child(3) { background: rgba(217, 119, 6, 0.14); }
+
+.rank__no {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.rank__avatar {
+  position: relative;
+  width: clamp(18px, 3vmin, 30px);
+  height: clamp(18px, 3vmin, 30px);
+  border-radius: 50%;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: hsl(var(--hue), 60%, 30%);
+  border: 2px solid hsl(var(--hue), 90%, 65%);
+}
+
+.rank__avatar img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.rank__initial { font-weight: 800; font-size: 0.8em; }
+
+.rank__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rank__value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.ranking__empty {
+  margin: auto 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: clamp(10px, 1.5vmin, 13px);
+}
+
+/* 横長の画面ではランキングを右へ。data-ranking で固定もできます。 */
+@media (min-aspect-ratio: 1/1) {
+  .battle { grid-template-columns: minmax(0, 1fr) clamp(260px, 26vw, 420px); grid-template-rows: minmax(0, 1fr); }
+}
+
+body[data-ranking="right"] .battle {
+  grid-template-columns: minmax(0, 1fr) clamp(220px, 26vw, 420px);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+body[data-ranking="below"] .battle {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+/* --------------------------------------------------------------- panel */
+
+.panel {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+.panel__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.panel label { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
+
+.panel input, .panel select {
+  background: #0d1024;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 6px;
+  font: inherit;
+}
+
+.panel input[type="text"] { width: 130px; }
+.panel input[type="number"] { width: 70px; }
+#connect-input { flex: 1 1 240px; }
+
+.panel button {
+  background: #1a1f43;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.panel button:hover { background: #262c5c; }
+.panel__hint { color: var(--muted); }
+
+/* 配信画面モード: テストパネルを出さない */
+body.obs .panel { display: none; }
