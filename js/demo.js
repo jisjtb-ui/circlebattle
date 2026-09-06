@@ -23,7 +23,10 @@
 
     this.settings = this.config.demo;
     this.active = Boolean(this.settings.enabled);
+    /** 引き上げ中か。円を 1 つずつ消している間だけ true。 */
+    this.retiring = false;
     this._nextAt = null;
+    this._retireAt = null;
     this._users = null;
 
     var self = this;
@@ -58,8 +61,10 @@
    * 円が十分あるときは何もしません (仮の視聴者で埋め尽くさないため)。
    */
   DemoDirector.prototype.update = function (at) {
-    if (!this.active) return null;
     var now = at != null ? at : this.now();
+
+    if (this.retiring) { this._retireTick(now); return null; }
+    if (!this.active) return null;
 
     if (this._nextAt == null) this._nextAt = now;
     if (now < this._nextAt) return null;
@@ -85,18 +90,39 @@
   /**
    * 止める。
    *
-   * 円もフィールドから引き上げます。残したままだと、そのあとも敵を倒し続けて
-   * 本物の視聴者のランキングに仮の名前が混ざってしまうためです。
+   * 円も引き上げますが、**まとめて消しません**。一斉に消すと、最初の LIKE が
+   * 来た瞬間に画面の円が全部消えて「リセットされた」ように見えるためです。
+   * retireIntervalMs ごとに 1 つずつ引き上げ、本物の視聴者の円と入れ替えます。
+   *
+   * ランキングの記録だけは先に消します。引き上げ中の円が敵を倒しても
+   * 点が入らないように、GameSession 側でも仮視聴者への加点を止めています。
    */
   DemoDirector.prototype.stop = function () {
     if (!this.active) return this;
     this.active = false;
 
-    if (this.settings.clearOnRealEvent) {
-      if (this.engine) this.engine.removeCirclesWhere(function (circle) { return circle.demo; });
-      if (this.leaderboard) this.leaderboard.removeWhere(function (record) { return record.demo; });
+    if (!this.settings.clearOnRealEvent) return this;
+
+    if (this.leaderboard) this.leaderboard.removeWhere(function (record) { return record.demo; });
+
+    if (this.settings.retireIntervalMs > 0) {
+      this.retiring = true;
+      this._retireAt = null;
+    } else if (this.engine) {
+      this.engine.removeCirclesWhere(function (circle) { return circle.demo; });
     }
     return this;
+  };
+
+  /** 引き上げ中: 間隔ごとに仮視聴者の円を 1 つ消す。 */
+  DemoDirector.prototype._retireTick = function (now) {
+    if (this._retireAt == null) this._retireAt = now + this.settings.retireIntervalMs;
+
+    while (now >= this._retireAt) {
+      var removed = this.engine.removeCirclesWhere(function (circle) { return circle.demo; }, 1);
+      if (!removed) { this.retiring = false; return; }
+      this._retireAt += this.settings.retireIntervalMs;
+    }
   };
 
   global.CB = global.CB || {};

@@ -75,26 +75,42 @@
     });
   };
 
+  /** tikhub の既定の待ち受け先。最後の砦としてここには必ず繋ぎにいきます。 */
+  var DEFAULT_BRIDGES = ['http://127.0.0.1:8787/events', 'http://localhost:8787/events'];
+
   /**
-   * 繋ぎにいく中継サーバーの URL を決める。
+   * 繋ぎにいく中継サーバーの URL を、試す順に並べて返す。
    *
-   *   1. ?bridge=... が付いていればそれ
+   *   1. ?bridge=... が付いていればそれだけ
    *   2. このページ自体が中継サーバーから配信されているなら、同じ場所の /events
    *      (tikhub が http://127.0.0.1:8787/ でゲームごと配信している場合)
-   *   3. それ以外 (index.html を直接開いた場合) は 127.0.0.1:8787
+   *   3. どこから開かれていても 127.0.0.1:8787 / localhost:8787
    *
-   * どの開き方でも設定なしで繋がるようにするための決め方です。
+   * 2 だけだと、ゲームを別の場所 (VS Code の Live Server、社内サーバー、
+   * GitHub Pages などの「サイト」) から開いたときに、その場所に居もしない
+   * /events を探しにいって永久に繋がりません。同じ PC で tikhub が動いて
+   * いるなら繋がるべきなので、既定の待ち受け先も必ず候補に入れます。
+   *
+   * @returns {string[]}
    */
-  TikTokAdapter.resolveBridgeUrl = function (loc) {
+  TikTokAdapter.resolveBridgeUrls = function (loc) {
     loc = loc || global.location;
     var params = new URLSearchParams(loc.search || '');
     var explicit = params.get('bridge');
-    if (explicit) return explicit;
+    if (explicit) return [explicit];
 
+    var candidates = [];
     if (loc.protocol === 'http:' || loc.protocol === 'https:') {
-      return loc.origin + '/events';
+      candidates.push(loc.origin + '/events');
     }
-    return 'http://127.0.0.1:8787/events';
+    DEFAULT_BRIDGES.forEach(function (url) { candidates.push(url); });
+
+    return candidates.filter(function (url, index) { return candidates.indexOf(url) === index; });
+  };
+
+  /** 昔の呼び出し方 (1 つだけ返す) との互換。 */
+  TikTokAdapter.resolveBridgeUrl = function (loc) {
+    return TikTokAdapter.resolveBridgeUrls(loc)[0];
   };
 
   /**
@@ -111,16 +127,44 @@
    * @param {string} [url] 例 http://localhost:8787/events
    */
   TikTokAdapter.prototype.connect = function (url) {
-    var target = url || this.options.url || TikTokAdapter.resolveBridgeUrl();
+    var targets = url ? [url]
+      : (this.options.url ? [this.options.url] : TikTokAdapter.resolveBridgeUrls());
+    return this._connectAny(targets, 0);
+  };
+
+  /**
+   * 候補を上から順に試す。
+   *
+   * 最後の候補だけは、繋がらなくても閉じずに残します。EventSource は自分で
+   * 再接続を続けるので、ゲームを先に開いて tikhub をあとから起動しても
+   * 放っておけば繋がります。
+   */
+  TikTokAdapter.prototype._connectAny = function (targets, index) {
+    var self = this;
+    var target = targets[index];
+    var last = index >= targets.length - 1;
+
     this.url = target;
-    return /^https?:/.test(target) ? this._connectSse(target) : this._connectWebSocket(target);
+    this.candidates = targets;
+
+    var attempt = /^https?:/.test(target)
+      ? this._connectSse(target, last)
+      : this._connectWebSocket(target);
+
+    return attempt.then(function (ok) {
+      if (ok || last) return ok;
+      // ここには居なかった。再接続を続けさせないよう閉じてから次を試す。
+      console.info('[CB] 中継サーバーが見つかりません:', target, '— 次を試します:', targets[index + 1]);
+      self.disconnect();
+      return self._connectAny(targets, index + 1);
+    });
   };
 
   /**
    * SSE。送るのはサーバー -> ブラウザの一方向だけなので、これで足ります。
    * 切断時の再接続はブラウザ (EventSource) が自前でやってくれます。
    */
-  TikTokAdapter.prototype._connectSse = function (target) {
+  TikTokAdapter.prototype._connectSse = function (target, keepRetrying) {
     var self = this;
 
     return new Promise(function (resolve) {
@@ -165,9 +209,11 @@
         // EventSource は自動で再接続を続けるので、ここでは状態を落とすだけ。
         // tikhub をあとから起動しても、放っておけば繋がります。
         if (!self.connected && !self.warned) {
-          self.warned = true;
-          console.warn('[CB] 中継サーバーに接続できません:', target,
-                       '— tikhub を起動すると自動で繋がります');
+          if (keepRetrying) {
+            self.warned = true;
+            console.warn('[CB] 中継サーバーに接続できません:', target,
+                         '— tikhub を起動すると自動で繋がります');
+          }
           resolve(false);
         }
         self.connected = false;
@@ -246,4 +292,8 @@
 
   global.CB = global.CB || {};
   global.CB.TikTokAdapter = TikTokAdapter;
-})(window);
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { TikTokAdapter: TikTokAdapter };
+  }
+})(typeof window !== 'undefined' ? window : this);

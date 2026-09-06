@@ -130,7 +130,9 @@
     tiktok.onStatus(function (status) {
       var live = tiktok.live || {};
       if (status !== 'connected') {
-        renderer.setStatus('offline', '中継サーバー未接続');
+        // どこを見にいっているかを出す。繋がらないときの切り分けに要ります。
+        var host = (tiktok.url || '').replace(/^https?:\/\//, '').replace(/\/events$/, '');
+        renderer.setStatus('offline', '中継サーバー未接続' + (host ? ' (' + host + ')' : ''));
         return;
       }
       if (live.status === 'connected') {
@@ -173,7 +175,12 @@
     // --- TikTok へ繋ぐ (?offline=1 のときは繋がない)
     if (params.get('offline') !== '1') {
       renderer.setStatus('offline', '中継サーバーを探しています…');
-      tiktok.connect();
+      tiktok.connect().then(function (ok) {
+        if (!ok) {
+          console.warn('[CB] 中継サーバーが見つかりませんでした。tikhub を起動してください。' +
+                       ' 別の PC で動かしている場合は ?bridge=http://その PC:8787/events を付けてください。');
+        }
+      });
     } else {
       renderer.setStatus('offline', 'オフライン');
     }

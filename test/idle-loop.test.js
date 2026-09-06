@@ -44,17 +44,50 @@ test('本物の視聴者が現れたらデモは止まり、記録も消える',
   assert.ok(leaderboard.count() > 0, 'デモの記録が作られていない');
   assert.ok(leaderboard.top().every((r) => r.demo), 'デモ以外が混ざっている');
 
-  send({ type: 'follow', user: { id: 'real-1', uniqueId: 'realviewer' } });
+  send({ type: 'like', user: { id: 'real-1', uniqueId: 'realviewer' }, count: 10 });
 
   assert.strictEqual(demo.active, false, 'デモが止まっていない');
   assert.strictEqual(leaderboard.count(), 1, 'デモの記録が残っている');
   assert.strictEqual(leaderboard.top()[0].userName, 'realviewer');
 
-  assert.strictEqual(engine.circles.filter((c) => c.demo).length, 0, 'デモの円が残っている');
+  // 引き上げは 1 つずつ。LIKE した瞬間に画面の円が全部消えてはいけない。
+  assert.ok(engine.circles.filter((c) => c.demo).length > 1,
+    'デモの円が一斉に消えている (画面がリセットされたように見える)');
 
   run(harness, 30_000, true);
-  assert.strictEqual(engine.circles.filter((c) => c.demo).length, 0, 'デモの円がまた出ている');
+  assert.strictEqual(engine.circles.filter((c) => c.demo).length, 0, 'デモの円が引き上げられていない');
   assert.ok(leaderboard.top().every((r) => !r.demo), 'デモの記録が復活している');
+});
+
+test('デモの円は少しずつ引き上げられる (画面が一度に空にならない)', () => {
+  const harness = setup();
+  const { engine, config, send } = harness;
+
+  run(harness, 20_000, true);
+  const before = engine.circles.filter((c) => c.demo).length;
+  assert.ok(before >= 5, 'デモの円が足りない');
+
+  send({ type: 'like', user: { id: 'real-1', uniqueId: 'realviewer' }, count: 10 });
+
+  // 引き上げ間隔 2 回ぶん進めても、消えるのは 2〜3 個まで
+  run(harness, config.demo.retireIntervalMs * 2, true);
+  const after = engine.circles.filter((c) => c.demo).length;
+  assert.ok(after < before, '引き上げが始まっていない');
+  assert.ok(before - after <= 3, `${before - after} 個まとめて消えている`);
+});
+
+test('引き上げ中のデモの円が敵を倒しても、ランキングには戻らない', () => {
+  const harness = setup();
+  const { engine, leaderboard, send } = harness;
+
+  run(harness, 20_000, true);
+  send({ type: 'like', user: { id: 'real-1', uniqueId: 'realviewer' }, count: 10 });
+
+  const killsBefore = engine.stats.defeated;
+  run(harness, 5_000, true);
+
+  assert.ok(engine.stats.defeated > killsBefore, '引き上げ中に戦闘が起きていない');
+  assert.ok(leaderboard.top().every((r) => !r.demo), 'デモの名前がランキングに戻っている');
 });
 
 test('デモは設定で止められる', () => {

@@ -65,7 +65,7 @@
     if (!this.engine) return;
 
     this.engine.on('damage', function (hit) {
-      if (!self.leaderboard) return;
+      if (!self.leaderboard || !self._creditable(hit.owner)) return;
       var scoring = self.config.scoring;
       var owner = self._ownerOf(hit.owner);
       self.leaderboard.addDamage(owner, hit.amount, hit.at);
@@ -75,6 +75,18 @@
     });
 
     this.engine.on('enemy:killed', function (kill) { self._award(kill); });
+  };
+
+  /**
+   * この貢献に点を入れてよいか。
+   *
+   * 本物の視聴者が現れたあと、まだ引き上げ切れていない仮視聴者の円が
+   * 敵を倒すことがあります。そのぶんを入れるとランキングに仮の名前が
+   * 復活してしまうので、加点だけ止めます (円はそのまま動き続けます)。
+   */
+  GameSession.prototype._creditable = function (contribution) {
+    if (!contribution || !contribution.demo) return true;
+    return !(this.realEventSeen && this.config.demo.clearOnRealEvent);
   };
 
   /** contribution / lastHit を Leaderboard が受け取れる形にする。 */
@@ -102,17 +114,19 @@
 
     var scoring = this.config.scoring;
     var points = kill.points || 0;
-    var contributions = kill.contributions || [];
     var self = this;
 
-    var credited = kill.lastHit;
+    // 点を入れられない貢献 (引き上げ中の仮視聴者) はここで落とす
+    var contributions = (kill.contributions || []).filter(function (c) { return self._creditable(c); });
+
+    var credited = this._creditable(kill.lastHit) ? kill.lastHit : null;
     if (scoring.killCredit === 'topDamage' && contributions.length) {
       credited = contributions.reduce(function (best, c) {
         return !best || c.damage > best.damage ? c : best;
       }, null);
     }
     if (!credited && contributions.length) credited = contributions[0];
-    if (!credited) return;
+    if (!credited) { this.emit('kill', kill); return; }
 
     if (scoring.mode === 'damage' && contributions.length) {
       var total = contributions.reduce(function (sum, c) { return sum + c.damage; }, 0) || 1;

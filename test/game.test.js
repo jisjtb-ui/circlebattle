@@ -191,3 +191,89 @@ test('視聴者が増えると敵も増える (上限は守る)', () => {
   }
   assert.strictEqual(engine.targetAlive(), config.enemies.spawn.maxAlive);
 });
+
+test('敵は等速直線運動をする (速さも向きも変わらない)', () => {
+  const { engine, advance } = setup({
+    config: { enemies: { spawn: { initialCount: 1, minAlive: 0, maxAlive: 1, intervalMs: 10_000_000 } } }
+  });
+  const enemy = engine.enemies[0];
+  // 壁で反射しない向きと位置にしておく
+  enemy.position.x = 500;
+  enemy.position.y = 500;
+  enemy.velocity.x = enemy.speed;
+  enemy.velocity.y = 0;
+
+  advance(2_000, { steps: 60 });
+
+  assert.ok(Math.abs(enemy.velocity.x - enemy.speed) < 0.001, '速さが変わっている');
+  assert.strictEqual(enemy.velocity.y, 0, '向きが変わっている');
+  assert.ok(Math.abs(enemy.position.y - 500) < 0.001, 'まっすぐ進んでいない');
+});
+
+test('視聴者円も等速直線運動をする (敵を追いかけない)', () => {
+  const { engine, advance } = setup({
+    config: { enemies: { spawn: { initialCount: 0, minAlive: 0, maxAlive: 0, intervalMs: 10_000_000 } } }
+  });
+  const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', strength: 1 });
+  circle.position.x = 300;
+  circle.position.y = 500;
+  circle.velocity.x = circle.speed;
+  circle.velocity.y = 0;
+
+  // 追いかける実装なら、この敵のほうへ曲がってしまう
+  const enemy = engine.spawnEnemy('normal');
+  enemy.position.x = 300;
+  enemy.position.y = 900;
+  enemy.velocity.x = 0;
+  enemy.velocity.y = 0;
+
+  advance(1_000, { steps: 30 });
+
+  assert.ok(Math.abs(circle.position.y - 500) < 0.001, '敵のほうへ曲がっている');
+  assert.ok(Math.abs(circle.velocity.x - circle.speed) < 0.001, '速さが変わっている');
+});
+
+test('壁では反射する (フィールドから出ない)', () => {
+  const { engine, advance, config } = setup({
+    config: { enemies: { spawn: { initialCount: 1, minAlive: 0, maxAlive: 1, intervalMs: 10_000_000 } } }
+  });
+  const enemy = engine.enemies[0];
+  enemy.position.x = config.field.width - enemy.radius - 1;
+  enemy.position.y = 500;
+  enemy.velocity.x = enemy.speed;
+  enemy.velocity.y = 0;
+
+  advance(1_000, { steps: 30 });
+
+  assert.ok(enemy.velocity.x < 0, '壁で跳ね返っていない');
+  assert.ok(Math.abs(Math.hypot(enemy.velocity.x, enemy.velocity.y) - enemy.speed) < 0.001,
+    '反射で速さが変わっている');
+});
+
+test('設定を戻せば追いかける動きにもできる', () => {
+  const { engine, advance } = setup({
+    config: {
+      viewers: { movement: { mode: 'seek' } },
+      enemies: { spawn: { initialCount: 0, minAlive: 0, maxAlive: 0, intervalMs: 10_000_000 } }
+    }
+  });
+  const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', strength: 1 });
+  circle.position.x = 300;
+  circle.position.y = 500;
+
+  const enemy = engine.spawnEnemy('normal');
+  enemy.position.x = 300;
+  enemy.position.y = 900;
+  enemy.velocity.x = 0;
+  enemy.velocity.y = 0;
+
+  advance(1_000, { steps: 30 });
+  assert.ok(circle.position.y > 520, '敵に近づいていない');
+});
+
+test('プロフィール画像が見える大きさになっている', () => {
+  const { config } = setup();
+  // フィールド 1000 を 1080px で描くので、直径が 40px 未満だと顔が潰れる
+  const diameterPx = config.viewers.base.radius * 2 * (1080 / config.field.width);
+  assert.ok(diameterPx >= 40, `視聴者円の直径が ${Math.round(diameterPx)}px しかない`);
+});

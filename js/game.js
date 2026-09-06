@@ -247,11 +247,15 @@
   };
 
   /**
-   * 条件に合う円をまとめて消す。
-   * (デモ視聴者の円を、本物の視聴者が来た時点で引き上げるのに使います)
+   * 条件に合う円を消す。
+   * (デモ視聴者の円を、本物の視聴者が来たあと少しずつ引き上げるのに使います)
+   *
+   * @param {function} predicate
+   * @param {number} [limit] 一度に消す数。省略すると全部
    */
-  BattleEngine.prototype.removeCirclesWhere = function (predicate) {
+  BattleEngine.prototype.removeCirclesWhere = function (predicate, limit) {
     var doomed = this.circles.filter(predicate);
+    if (limit > 0) doomed = doomed.slice(0, limit);
     for (var i = 0; i < doomed.length; i += 1) this._removeCircle(doomed[i], 'retired');
     return doomed.length;
   };
@@ -354,15 +358,25 @@
   /**
    * 敵の動き。
    *
-   * ふらふらと向きを変えつつ、少しだけ最寄りの視聴者円へ寄っていきます
-   * (movement.chase = 0 なら完全にランダム)。止まっている敵は作りません。
+   * 既定 (movement.mode = 'linear') は等速直線運動です。速さも向きも変えず、
+   * 壁で反射するだけなので、どこへ向かっているのかが見て分かります。
+   * 'wander' にすると、ふらふら向きを変えつつ視聴者円へ寄っていきます。
    */
   BattleEngine.prototype._moveEnemies = function (dt, now) {
     var movement = this.config.enemies.movement;
     var turn = movement.turnIntervalMs;
+    var wander = movement.mode === 'wander';
 
     for (var i = 0; i < this.enemies.length; i += 1) {
       var enemy = this.enemies[i];
+
+      if (!wander) {
+        // 等速直線運動。壁で反射する以外、速度に触りません。
+        enemy.position.x += enemy.velocity.x * dt;
+        enemy.position.y += enemy.velocity.y * dt;
+        this._contain(enemy);
+        continue;
+      }
 
       if (now >= enemy.turnAt) {
         var heading = this.random() * Math.PI * 2;
@@ -404,10 +418,16 @@
   /**
    * 視聴者円の動きと戦闘。
    *
-   * 1 回のループで「最寄りの敵を探す」と「触れている敵を殴る」を同時に済ませます。
-   * 円 260 個 x 敵 36 体でも 1 万回程度の距離計算なので、毎フレームで足ります。
+   * 既定 (viewers.movement.mode = 'linear') は敵と同じ等速直線運動です。
+   * 追いかけないぶん当たるかどうかは運になりますが、盤面が読めます。
+   * 'seek' にすると最寄りの敵へまっすぐ向かいます。
+   *
+   * 1 回のループで「触れている敵を殴る」と「最寄りの敵を探す」を同時に済ませます。
+   * 円 150 個 x 敵 36 体でも 1 万回未満の距離計算なので、毎フレームで足ります。
    */
   BattleEngine.prototype._moveCirclesAndFight = function (dt, now) {
+    var seek = (this.config.viewers.movement || {}).mode === 'seek';
+
     for (var i = 0; i < this.circles.length; i += 1) {
       var circle = this.circles[i];
       if (circle.dead) continue;
@@ -423,7 +443,7 @@
         var dy = enemy.position.y - circle.position.y;
         var dist = Math.sqrt(dx * dx + dy * dy);
 
-        if (dist < nearestDist) { nearestDist = dist; nearest = enemy; }
+        if (seek && dist < nearestDist) { nearestDist = dist; nearest = enemy; }
 
         // 接触したら殴り合う。どちらも自分の間隔でしか殴れません。
         if (dist <= enemy.radius + circle.radius) {
@@ -439,8 +459,9 @@
         }
       }
 
-      // 最寄りの敵へ向かう。敵がいなければ、そのまま進んで壁で跳ね返ります。
-      if (nearest && !circle.dead) {
+      // 'seek' のときだけ最寄りの敵へ向き直す。
+      // 'linear' では速度に触らないので、等速のまままっすぐ進みます。
+      if (seek && nearest && !circle.dead) {
         var tx = nearest.position.x - circle.position.x;
         var ty = nearest.position.y - circle.position.y;
         var len = Math.sqrt(tx * tx + ty * ty) || 1;

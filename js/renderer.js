@@ -198,10 +198,14 @@
     ctx.arc(x, y, r, 0, Math.PI * 2);
 
     if (image) {
-      // 画像は円の中だけに描く (はみ出さないように切り抜く)
+      // 画像は円の中だけに描く (はみ出さないように切り抜く)。
+      // 正方形でない画像でも顔が伸びないよう、短い辺に合わせて中央を切り出します。
       ctx.save();
       ctx.clip();
-      ctx.drawImage(image, x - r, y - r, r * 2, r * 2);
+      var iw = image.naturalWidth || image.width || 1;
+      var ih = image.naturalHeight || image.height || 1;
+      var side = Math.min(iw, ih);
+      ctx.drawImage(image, (iw - side) / 2, (ih - side) / 2, side, side, x - r, y - r, r * 2, r * 2);
       ctx.restore();
     } else {
       // 取れなかった / まだ読み込めていない場合の既定アイコン
@@ -218,7 +222,7 @@
 
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.lineWidth = Math.max(1.5, r * 0.16);
+    ctx.lineWidth = Math.max(2, r * 0.13);
     ctx.strokeStyle = color;
     ctx.stroke();
 
@@ -324,6 +328,12 @@
         row.name.textContent = '@' + record.userName;
         row.initial.textContent = initial(record.userName);
         row.el.style.setProperty('--hue', ownerHue(record.userId));
+
+        // 行は使い回すので、前に居た人の画像をいったん外す。
+        // 外さないと、画像を持っていない人のところに他人のアイコンが残ります。
+        row.src = null;
+        row.img.hidden = true;
+        row.img.removeAttribute('src');
       }
 
       if (record.profileImageUrl && row.src !== record.profileImageUrl) {
