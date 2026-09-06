@@ -199,3 +199,54 @@ test('プロフィール画像がランキングまで届く', () => {
 
   assert.strictEqual(leaderboard.get('u1').profileImageUrl, 'https://x/100x100/a.webp');
 });
+
+test('円は足し算で増える (10 個出ているところに 100 LIKE で 20 個)', () => {
+  const { engine, send } = setup();
+  const user = { id: 'u1', uniqueId: 'taro' };
+
+  send({ type: 'like', user, count: 100 });
+  assert.strictEqual(circlesOf(engine, 'u1').length, 10);
+
+  send({ type: 'like', user, count: 100 });
+  assert.strictEqual(circlesOf(engine, 'u1').length, 20,
+    '古い円が消えて増えていない (1 人あたりの上限が低すぎる)');
+
+  send({ type: 'like', user, count: 100 });
+  assert.strictEqual(circlesOf(engine, 'u1').length, 30);
+});
+
+test('ギフトや FOLLOW の円も、LIKE の円に足される', () => {
+  const { engine, send } = setup();
+  const user = { id: 'u1', uniqueId: 'taro' };
+
+  send({ type: 'like', user, count: 100 });
+  send({ type: 'follow', user });
+  send({ type: 'share', user });
+  send({ type: 'gift', user, diamondCount: 50 });
+
+  assert.strictEqual(circlesOf(engine, 'u1').length, 13);
+});
+
+test('上限に達したときだけ、その人の一番古い円と入れ替わる', () => {
+  const { engine, send, config } = setup({ config: { viewers: { limits: { maxPerUser: 12 } } } });
+  const user = { id: 'u1', uniqueId: 'taro' };
+
+  send({ type: 'like', user, count: 100 });
+  const oldest = circlesOf(engine, 'u1')[0].id;
+
+  send({ type: 'like', user, count: 100 });
+
+  const mine = circlesOf(engine, 'u1');
+  assert.strictEqual(mine.length, config.viewers.limits.maxPerUser);
+  assert.ok(!mine.some((c) => c.id === oldest), '一番古い円が残っている');
+});
+
+test('他人の円は減らない', () => {
+  const { engine, send } = setup();
+  send({ type: 'like', user: { id: 'a', uniqueId: 'a' }, count: 100 });
+  send({ type: 'like', user: { id: 'b', uniqueId: 'b' }, count: 100 });
+  send({ type: 'like', user: { id: 'b', uniqueId: 'b' }, count: 100 });
+
+  assert.strictEqual(circlesOf(engine, 'a').length, 10, '他人の LIKE で減っている');
+  assert.strictEqual(circlesOf(engine, 'b').length, 20);
+});
