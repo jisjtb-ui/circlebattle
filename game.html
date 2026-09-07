@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CIRCLE BATTLE</title>
+<link rel="stylesheet" href="css/game.css">
+</head>
+<body>
+
+<!-- ============================================================
+     配信に映す画面だけ。設定も接続もここには置きません。
+
+       上   : STATUS (WAVE / DEFEATED / 数)
+       中央 : 正方形のバトルフィールド (この画面の主役)
+       下   : TOP 10 PLAYER + LIVE EVENT (数行)
+
+     操作画面 (index.html) から開かれた場合はその状態を共有し、
+     URL で直接開かれた場合 (OBS のブラウザソース) は自分で動かします。
+     ============================================================ -->
+<div class="game" id="game">
+
+  <!-- 横向きでは配置が破綻するので、そもそも出しません -->
+  <div class="rotate" id="rotate">
+    <span class="rotate__main">PORTRAIT MODE REQUIRED</span>
+    <span class="rotate__sub">Turn your device upright</span>
+  </div>
+
+  <header class="status">
+    <div class="status__top">
+      <span class="status__wave">WAVE <b id="wave">1</b></span>
+      <span class="status__conn" id="status" data-state="offline"><i></i><span id="status-text">…</span></span>
+      <span class="status__muted" id="muted" hidden>🔇 TAP FOR SOUND</span>
+    </div>
+
+    <div class="status__defeated">
+      <span class="status__label">ENEMIES DEFEATED</span>
+      <span class="status__value" id="defeated">0</span>
+    </div>
+
+    <div class="status__meta">
+      <span>ENEMIES <b id="enemies-alive">0</b></span>
+      <span>CIRCLES <b id="circles-alive">0</b></span>
+      <span>PLAYERS <b id="players">0</b></span>
+    </div>
+
+    <!-- 大物が居る間だけ出ます -->
+    <div class="boss" id="boss-bar" hidden>
+      <span class="boss__label" id="boss-bar-label">BOSS</span>
+      <span class="boss__track"><span class="boss__fill" id="boss-bar-fill"></span></span>
+      <span class="boss__value" id="boss-bar-value">0</span>
+    </div>
+  </header>
+
+  <main class="field-wrap">
+    <canvas id="field"></canvas>
+    <div class="notice" id="notice" hidden></div>
+    <div class="stage-banner" id="stage-banner" hidden>
+      <span class="stage-banner__main" id="stage-banner-main">STAGE EXPANDED</span>
+      <span class="stage-banner__sub" id="stage-banner-sub"></span>
+    </div>
+  </main>
+
+  <section class="ranking">
+    <h2 class="ranking__title">
+      TOP 10 PLAYER
+      <span class="ranking__metric" id="ranking-metric">SCORE</span>
+    </h2>
+    <ol class="ranking__list" id="ranking-list"></ol>
+    <!-- 中身は config から作られます (設定を変えれば説明も変わります) -->
+    <p class="ranking__empty" id="ranking-empty">LIKE / FOLLOW / SHARE / GIFT で参加</p>
+    <!-- TOP10 の外に居る人の順位。誰も居なければ出ません -->
+    <p class="ranking__self" id="self-rank" hidden></p>
+  </section>
+
+  <ul class="events" id="event-feed"></ul>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/leaderboard.js"></script>
+<script src="js/game.js"></script>
+<script src="js/game-session.js"></script>
+<script src="js/event-router.js"></script>
+<script src="js/director.js"></script>
+<script src="js/demo.js"></script>
+<script src="js/avatars.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/renderer.js"></script>
+<script src="js/tiktok-adapter.js"></script>
+<script src="js/app.js"></script>
+<script src="js/game-view.js"></script>
+<script src="js/game-main.js"></script>
+</body>
+</html>

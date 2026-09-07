@@ -1,0 +1,321 @@
+/*
+ * control.css - 操作画面だけの見た目。配信には映しません。
+ *
+ * ここは PC のブラウザで見る前提です (配信中に触る画面なので)。
+ * 縦画面の作り込みはゲーム画面 (game.css) が持っています。
+ * 狭いときは 1 列に落ちます。
+ */
+
+:root {
+  --bg: #070714;
+  --bg-panel: rgba(18, 20, 44, 0.82);
+  --line: rgba(120, 140, 255, 0.22);
+  --text: #eef1ff;
+  --muted: #97a0c8;
+  --accent: #5eead4;
+}
+
+* { box-sizing: border-box; }
+
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, -apple-system, 'Hiragino Kaku Gothic ProN', sans-serif;
+  font-size: 13px;
+}
+
+body {
+  background-image:
+    radial-gradient(900px 600px at 20% -10%, rgba(94, 234, 212, 0.10), transparent 60%),
+    radial-gradient(900px 600px at 90% 110%, rgba(244, 114, 182, 0.12), transparent 60%);
+}
+
+.control {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 14px clamp(10px, 2vw, 24px) 40px;
+  display: grid;
+  gap: 12px;
+}
+
+/* ---------------------------------------------------------------- head */
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.head__title {
+  margin: 0;
+  font-size: clamp(15px, 2.4vw, 24px);
+  letter-spacing: 0.18em;
+  font-weight: 800;
+}
+
+.head__title span { color: var(--muted); font-weight: 600; }
+
+.head__right { display: inline-flex; align-items: center; gap: 12px; }
+
+.muted {
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(250, 204, 21, 0.5);
+  background: rgba(250, 204, 21, 0.12);
+  color: #fde68a;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.status i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #64748b;
+  box-shadow: 0 0 10px currentColor;
+}
+
+.status[data-state="live"] i { background: #22c55e; }
+.status[data-state="waiting"] i { background: #f59e0b; }
+.status[data-state="bridge"] i { background: #38bdf8; }
+.status[data-state="offline"] i { background: #64748b; }
+
+/* --------------------------------------------------------------- 2 列 */
+
+.columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  align-items: start;
+  gap: 12px;
+}
+
+.col { display: grid; gap: 12px; align-content: start; }
+
+.card {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.card__title {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.24em;
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.card__note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.card--go { border-color: rgba(94, 234, 212, 0.45); }
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.row--meta {
+  gap: 14px;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+.row--meta b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+label { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); }
+label.check { gap: 6px; }
+label.file { gap: 6px; flex: 1 1 220px; }
+
+input, select, button, output {
+  font: inherit;
+  color: var(--text);
+}
+
+input[type="text"], input[type="number"], select, input[type="file"] {
+  background: #0d1024;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+
+input[type="text"] { width: 130px; }
+input[type="number"] { width: 72px; }
+input[type="range"] { width: 110px; accent-color: var(--accent); }
+input[type="file"] { max-width: 100%; flex: 1 1 auto; font-size: 11px; }
+#connect-input { flex: 1 1 240px; width: auto; }
+
+output { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 11px; min-width: 4ch; }
+
+button {
+  background: #1a1f43;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+button:hover { background: #262c5c; }
+
+.big {
+  width: 100%;
+  padding: 12px;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  color: #04121a;
+  background: var(--accent);
+  border-color: transparent;
+}
+
+.big:hover { background: #7ff3e0; }
+
+#game-window-state[data-state="open"] { color: var(--accent); }
+
+/* ------------------------------------------------------------ 設定行 */
+
+/*
+ * 設定は 1 つずつ枠で囲みます。囲まないと、ある設定の「値」と次の設定の
+ * 「名前」が並んでしまい (例: 1000 ms PER SPAWN)、どこまでが 1 つなのか
+ * 読めません。
+ */
+.row[data-setting-group] {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 4px 10px;
+}
+
+/* ラベル・スライダー・値 の 3 列。名前が長くてもスライダーがずれません。 */
+.setting {
+  display: grid;
+  grid-template-columns: 12ch minmax(70px, 1fr) 7ch;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.setting__label {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+.setting input[type="range"] { width: 100%; }
+.setting__value { text-align: right; }
+
+/* ---------------------------------------------------------- プレビュー */
+
+/*
+ * 操作画面のプレビューも正方形です。ここで潰すと、配信の見え方と
+ * 違ってしまって設定の当たりが付けられません。
+ */
+.preview {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1 / 1;
+  max-height: 46vh;
+  container-type: size;
+}
+
+#field {
+  width: min(100%, 100cqh);
+  aspect-ratio: 1 / 1;
+  max-width: 100%;
+  max-height: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #090a18;
+}
+
+.notice {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  max-width: 92%;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(10, 12, 30, 0.9);
+  border: 1px solid var(--line);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notice--in { animation: notice-in 240ms ease-out; }
+
+.stage-banner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  padding: 8px 20px;
+  border-radius: 12px;
+  background: rgba(6, 8, 20, 0.92);
+  border: 1px solid rgba(94, 234, 212, 0.55);
+  text-align: center;
+  pointer-events: none;
+}
+
+.stage-banner__main {
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.stage-banner__sub {
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.stage-banner--in { animation: stage-pop 2000ms ease-out forwards; }
+
+@keyframes stage-pop {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.82); }
+  12%  { opacity: 1; transform: translate(-50%, -50%) scale(1.04); }
+  20%  { transform: translate(-50%, -50%) scale(1); }
+  75%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.06); }
+}
+
+@keyframes notice-in {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}

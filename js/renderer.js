@@ -10,7 +10,13 @@
 (function (global) {
   'use strict';
 
-  function $(id) { return document.getElementById(id); }
+  /**
+   * このレンダラーは「どのウィンドウにでも描ける」ようにしてあります。
+   *
+   * 配信用のゲームウィンドウ (game.html) は、操作画面 (index.html) が持っている
+   * のと同じ engine / leaderboard を読み、自分のウィンドウの canvas へ描きます。
+   * そのため document と window は外から渡せるようにしてあります。
+   */
 
   /**
    * ユーザー ID から色を作る。同じ人はいつも同じ色になります。
@@ -39,6 +45,13 @@
     this.leaderboard = options.leaderboard || null;
     this.avatars = options.avatars || null;
 
+    /** 描き込む先のウィンドウ。省略するとこのページ。 */
+    this.doc = options.doc || document;
+    this.win = options.win || this.doc.defaultView || global;
+
+    var doc = this.doc;
+    var $ = function (id) { return doc.getElementById(id); };
+
     this.el = {
       canvas: $('field'),
       defeated: $('defeated'),
@@ -48,6 +61,13 @@
       rankingList: $('ranking-list'),
       rankingMetric: $('ranking-metric'),
       rankingEmpty: $('ranking-empty'),
+      selfRank: $('self-rank'),
+      eventFeed: $('event-feed'),
+      bossBar: $('boss-bar'),
+      bossBarLabel: $('boss-bar-label'),
+      bossBarFill: $('boss-bar-fill'),
+      bossBarValue: $('boss-bar-value'),
+      wave: $('wave'),
       notice: $('notice'),
       stageBanner: $('stage-banner'),
       stageBannerMain: $('stage-banner-main'),
@@ -56,6 +76,9 @@
       statusText: $('status-text')
     };
 
+    /** 画面に出ているイベント (最新数件だけ)。 */
+    this._events = [];
+
     this.ctx = this.el.canvas ? this.el.canvas.getContext('2d') : null;
     this.scale = 1;
     this._cssWidth = 0;
@@ -63,6 +86,8 @@
 
     /** 撃破の閃光。見た目だけの短命なリスト。 */
     this._bursts = [];
+    /** 「+1 KILL」のように飛ぶ短い文字。見た目だけです。 */
+    this._floats = [];
     this._rankingVersion = -1;
     this._rows = [];
     this._noticeTimer = null;
@@ -100,7 +125,7 @@
     if (!canvas) return;
 
     var rect = canvas.getBoundingClientRect();
-    var dpr = global.devicePixelRatio || 1;
+    var dpr = this.win.devicePixelRatio || 1;
     if (!rect.width || !rect.height) return;
 
     if (rect.width !== this._cssWidth || rect.height !== this._cssHeight ||
@@ -146,9 +171,17 @@
     for (i = 0; i < state.circles.length; i += 1) {
       this._drawLevel(ctx, state.circles[i], scale);
     }
+    // 名前は円を全部描いたあとに。円の下に隠れると誰の円か分かりません。
+    if (this.config.ui.nameTagMs > 0) {
+      for (i = 0; i < state.circles.length; i += 1) {
+        this._drawNameTag(ctx, state.circles[i], scale, now);
+      }
+    }
     this._drawBursts(ctx, scale, now);
+    this._drawFloats(ctx, scale, now);
     this._drawHud(state);
     this.renderRanking();
+    this._expireEvents(now);
   };
 
   /**
@@ -157,8 +190,8 @@
    */
   Renderer.prototype._drawBackground = function (ctx, w, h) {
     if (!this._bg || this._bgWidth !== w || this._bgHeight !== h) {
-      var canvas = document.createElement('canvas');
-      var dpr = global.devicePixelRatio || 1;
+      var canvas = this.doc.createElement('canvas');
+      var dpr = this.win.devicePixelRatio || 1;
       canvas.width = Math.round(w * dpr);
       canvas.height = Math.round(h * dpr);
       var bg = canvas.getContext('2d');
@@ -304,7 +337,7 @@
   Renderer.prototype._levelBadge = function (level) {
     if (!this._badges) this._badges = {};
     if (this._badges[level]) return this._badges[level];
-    if (typeof document === 'undefined') return null;
+    if (!this.doc) return null;
 
     var max = this.engine.maxLevel ? this.engine.maxLevel() : 100;
     var maxed = level >= max;
@@ -312,12 +345,12 @@
 
     // 元絵は大きめに作り、貼るときに縮めます (拡大するとぼやけるため)
     var font = 44;
-    var measure = document.createElement('canvas').getContext('2d');
+    var measure = this.doc.createElement('canvas').getContext('2d');
     measure.font = 'bold ' + font + 'px system-ui, sans-serif';
     var width = Math.ceil(measure.measureText(text).width + font * 0.9);
     var height = Math.ceil(font * 1.5);
 
-    var canvas = document.createElement('canvas');
+    var canvas = this.doc.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
     var ctx = canvas.getContext('2d');
@@ -461,6 +494,90 @@
     }
   };
 
+  /**
+   * 生まれたばかりの円に、誰のものかを出す。
+   *
+   * 自分が押した LIKE で自分の円が生まれたことが分かるのが、続けて押す一番の
+   * 理由になります。ずっと出しっぱなしにすると名前で埋まるので、数秒で消します。
+   */
+  Renderer.prototype._drawNameTag = function (ctx, circle, scale, now) {
+    var age = now - circle.bornAt;
+    var life = this.config.ui.nameTagMs;
+    if (age > life) return;
+
+    var r = circle.radius * scale;
+    var x = circle.position.x * scale;
+    var y = circle.position.y * scale + r + Math.max(11, r * 0.5);
+    // 最後の 1/4 で薄くして消す (ぱっと消えると点滅して見えます)
+    var alpha = Math.min(1, (life - age) / (life * 0.25));
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.font = 'bold ' + Math.max(10, Math.round(r * 0.5)) + 'px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+    ctx.strokeText('@' + circle.ownerName, x, y);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('@' + circle.ownerName, x, y);
+    ctx.restore();
+  };
+
+  /**
+   * 「+1 KILL」のような短い文字をフィールド上に飛ばす。
+   *
+   * 何かをした結果がその場で見えないと、押した意味が分かりません。
+   * ゲームの状態は一切変えません (消えても進行に影響しません)。
+   *
+   * @param {string} text  出す文字
+   * @param {number} x     フィールド座標
+   * @param {number} y     フィールド座標
+   * @param {object} [options] { color, size } size は**フィールド座標での大きさ**。
+   *        画面の px ではありません。スマホでも 1080 幅でも、円との
+   *        大きさの比が変わらないようにするためです。
+   */
+  Renderer.prototype.float = function (text, x, y, options) {
+    options = options || {};
+    this._floats.push({
+      text: String(text),
+      x: x,
+      y: y,
+      at: Date.now(),
+      color: options.color || '#ffffff',
+      size: options.size || 34
+    });
+    // 大量撃破で文字だらけになるので、古いものから捨てます
+    while (this._floats.length > (this.config.ui.floatMax || 14)) this._floats.shift();
+  };
+
+  Renderer.prototype._drawFloats = function (ctx, scale, now) {
+    var life = this.config.ui.floatMs || 1100;
+
+    for (var i = this._floats.length - 1; i >= 0; i -= 1) {
+      var item = this._floats[i];
+      var age = now - item.at;
+      if (age > life) { this._floats.splice(i, 1); continue; }
+
+      var t = age / life;
+      ctx.save();
+      ctx.globalAlpha = 1 - t * t;                      // 最後に一気に消す
+      // 小さい画面でも読めるところまでは縮めない
+      var px = Math.max(9, item.size * scale);
+      ctx.font = 'bold ' + px.toFixed(1) + 'px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 3.5;
+      ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+      var x = item.x * scale;
+      var y = item.y * scale - t * px * 1.6;            // ゆっくり上へ
+      ctx.strokeText(item.text, x, y);
+      ctx.fillStyle = item.color;
+      ctx.fillText(item.text, x, y);
+      ctx.restore();
+    }
+  };
+
   // --------------------------------------------------------------- HUD
 
   Renderer.prototype._drawHud = function (state) {
@@ -470,6 +587,55 @@
     if (this.el.players && this.leaderboard) {
       this.el.players.textContent = this.leaderboard.count();
     }
+    this._drawBossBar(state);
+  };
+
+  /**
+   * 大物が居るときだけ、画面上部に残り HP を出す。
+   *
+   * 「あと少し」が見えると、みんなで殴りにいく理由になります。
+   * 居ないときは消すので、常時 BOSS の圧を出しません。
+   */
+  Renderer.prototype._drawBossBar = function (state) {
+    var bar = this.el.bossBar;
+    if (!bar) return;
+
+    var minHp = this.config.ui.bossBarMinHp || 1000;
+    var boss = null;
+    for (var i = 0; i < state.enemies.length; i += 1) {
+      var enemy = state.enemies[i];
+      if (enemy.maxHp < minHp) continue;
+      if (!boss || enemy.maxHp > boss.maxHp) boss = enemy;
+    }
+
+    if (!boss) { bar.hidden = true; return; }
+
+    var ratio = Math.max(0, Math.min(1, boss.hp / boss.maxHp));
+    bar.hidden = false;
+    bar.style.setProperty('--color', boss.color);
+    if (this.el.bossBarLabel) this.el.bossBarLabel.textContent = boss.label;
+    if (this.el.bossBarFill) this.el.bossBarFill.style.width = (ratio * 100).toFixed(1) + '%';
+    if (this.el.bossBarValue) {
+      this.el.bossBarValue.textContent = Math.ceil(boss.hp).toLocaleString();
+    }
+  };
+
+  /** 今のウェーブ。director が進めます。 */
+  Renderer.prototype.setWave = function (wave) {
+    if (this.el.wave) this.el.wave.textContent = wave;
+  };
+
+  /**
+   * TOP10 に入っていない人へ「YOU #23」と出す。
+   *
+   * 圏外の人にも順位が見えないと、追いかける目標がありません。
+   * text が空なら消します。
+   */
+  Renderer.prototype.setSelfRank = function (text) {
+    var el = this.el.selfRank;
+    if (!el) return;
+    el.textContent = text || '';
+    el.hidden = !text;
   };
 
   // ----------------------------------------------------------- ranking
@@ -484,7 +650,7 @@
     this._rows = [];
 
     for (var i = 0; i < size; i += 1) {
-      var row = document.createElement('li');
+      var row = this.doc.createElement('li');
       row.className = 'rank';
       row.hidden = true;
       row.innerHTML =
@@ -513,7 +679,7 @@
    * leaderboard の version が変わったときだけ動くので、毎フレーム呼んで構いません。
    */
   Renderer.prototype.renderRanking = function (force) {
-    if (!this.leaderboard || !this._rows.length) return;
+    if (!this.leaderboard) return;
     if (!force && this.leaderboard.version === this._rankingVersion) return;
     this._rankingVersion = this.leaderboard.version;
 
@@ -522,8 +688,17 @@
     /** いま画面に出ている順位。並べ替えを何度もやらないよう、他からはこれを見ます。 */
     this.top = top;
 
+    // ランキングの枠を持たない画面 (操作画面のプレビュー) はここまで。
+    // 並べ替えた結果は上で公開してあるので、順位の変化は拾えます。
+    if (!this._rows.length) return;
+
     if (this.el.rankingMetric) this.el.rankingMetric.textContent = metric.toUpperCase();
-    if (this.el.rankingEmpty) this.el.rankingEmpty.hidden = top.length > 0;
+    if (this.el.rankingEmpty) {
+      this.el.rankingEmpty.hidden = top.length > 0;
+      // 誰も居ないときだけ、何をすると何が起きるかを出します。
+      // 遊んでいる人が居るのに出し続けると、ただの文字の壁になります。
+      if (!top.length) this.el.rankingEmpty.textContent = this._howToPlay();
+    }
 
     for (var i = 0; i < this._rows.length; i += 1) {
       var row = this._rows[i];
@@ -567,6 +742,18 @@
     }
   };
 
+  /**
+   * 「何をすると何が起きるか」の 1 行。config から作るので、
+   * 設定を変えれば表示も変わります (説明と実際がずれません)。
+   */
+  Renderer.prototype._howToPlay = function () {
+    var levels = this.config.viewers.levels;
+    return 'LIKE \u00d7' + levels.likesPerLevel + ' \u2192 Lv+1' +
+           '   FOLLOW \u2192 Lv+' + levels.follow +
+           '   SHARE \u2192 Lv+' + levels.share +
+           '   GIFT \u2192 Lv+' + levels.giftLevelsPerCoin + '/coin';
+  };
+
   // ---------------------------------------------------------- 通知/状態
 
   /** 画面上部の一時通知。ゲームの進行には影響しません。 */
@@ -580,11 +767,50 @@
     void el.offsetWidth;                 // アニメーションをやり直させる
     el.classList.add('notice--in');
 
-    clearTimeout(this._noticeTimer);
+    this.win.clearTimeout(this._noticeTimer);
     var self = this;
-    this._noticeTimer = setTimeout(function () {
+    this._noticeTimer = this.win.setTimeout(function () {
       el.hidden = true;
     }, this.config.ui.noticeMs);
+  };
+
+  /**
+   * 画面下の LIVE EVENT。最新の数件だけを出し、古いものから消します。
+   *
+   * ログを流し続けると小さい画面が埋まるので、件数と寿命の両方で絞ります。
+   *
+   * @param {string} user  @ 抜きのユーザー名
+   * @param {string} text  '+10 LIKE' など
+   * @param {string} [kind] 'like' | 'follow' | 'share' | 'gift' | 'join' | 'max'
+   */
+  Renderer.prototype.pushEvent = function (user, text, kind) {
+    var feed = this.el.eventFeed;
+    if (!feed) return;
+
+    var max = this.config.ui.eventLines || 3;
+    var row = this.doc.createElement('li');
+    row.className = 'event' + (kind ? ' event--' + kind : '');
+    row.innerHTML = '<span class="event__user"></span><span class="event__text"></span>';
+    row.firstChild.textContent = '@' + user;
+    row.lastChild.textContent = text;
+
+    feed.insertBefore(row, feed.firstChild);
+    this._events.unshift({ el: row, at: Date.now() });
+
+    while (this._events.length > max) {
+      var old = this._events.pop();
+      if (old.el.parentNode) old.el.parentNode.removeChild(old.el);
+    }
+  };
+
+  /** 時間が経ったイベントを消す (draw から毎フレーム呼ばれます)。 */
+  Renderer.prototype._expireEvents = function (now) {
+    var life = this.config.ui.eventLifeMs || 9000;
+    for (var i = this._events.length - 1; i >= 0; i -= 1) {
+      if (now - this._events[i].at < life) continue;
+      var gone = this._events.splice(i, 1)[0];
+      if (gone.el.parentNode) gone.el.parentNode.removeChild(gone.el);
+    }
   };
 
   /**
@@ -603,8 +829,8 @@
     void el.offsetWidth;                 // アニメーションをやり直させる
     el.classList.add('stage-banner--in');
 
-    clearTimeout(this._stageTimer);
-    this._stageTimer = setTimeout(function () { el.hidden = true; }, durationMs || 2000);
+    this.win.clearTimeout(this._stageTimer);
+    this._stageTimer = this.win.setTimeout(function () { el.hidden = true; }, durationMs || 2000);
   };
 
   /** 中継サーバー / 配信の状態表示。 */

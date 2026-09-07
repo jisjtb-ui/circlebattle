@@ -99,3 +99,36 @@ test('デモ視聴者だけを消せる', () => {
   assert.strictEqual(lb.count(), 1);
   assert.strictEqual(lb.top()[0].userName, 'real');
 });
+
+// ------------------------------------------------------- 圏外の人の順位
+
+test('ランキング外の人でも順位が分かる', () => {
+  const lb = board();
+  for (let i = 1; i <= 25; i += 1) {
+    lb.addScore({ id: 'u' + i, uniqueId: 'v' + i }, i * 10);
+  }
+
+  assert.strictEqual(lb.rankOf('u25'), 1, '一番点が高い人が 1 位でない');
+  assert.strictEqual(lb.rankOf('u3'), 23);
+  assert.strictEqual(lb.rankOf('nobody'), 0, '居ない人は 0');
+});
+
+test('直近に動いた本物の視聴者を覚えている', () => {
+  const lb = board();
+
+  lb.addScore({ id: 'u1', uniqueId: 'yui' }, 10);
+  lb.addScore({ id: 'u2', uniqueId: 'ren' }, 10);
+  assert.strictEqual(lb.mostRecent().userId, 'u2');
+
+  // 仮の視聴者は「自分ごと」ではないので選ばない
+  lb.addScore({ id: 'd1', uniqueId: 'demo1', demo: true }, 10);
+  assert.strictEqual(lb.mostRecent().userId, 'u2');
+});
+
+test('消えた人は覚えたままにしない', () => {
+  const lb = board();
+  lb.addScore({ id: 'u1', uniqueId: 'yui' }, 10);
+
+  lb.removeWhere((record) => record.userId === 'u1');
+  assert.strictEqual(lb.mostRecent(), null);
+});

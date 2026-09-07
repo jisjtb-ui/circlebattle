@@ -9,6 +9,7 @@ const { GameSession } = require('../js/game-session.js');
 const { EventRouter } = require('../js/event-router.js');
 const { Leaderboard } = require('../js/leaderboard.js');
 const { DemoDirector } = require('../js/demo.js');
+const { Director } = require('../js/director.js');
 
 /** CONFIG を壊さないように毎回コピーしてから上書きする (入れ子も辿る)。 */
 function merge(base, overrides) {
@@ -48,6 +49,7 @@ function setup(options = {}) {
   const router = new EventRouter({ config, now });
   router.attach('live-1', session);
   const demo = new DemoDirector(session, { config, now, random });
+  const director = new Director(engine, { config, now, random: options.directorRandom || random });
 
   const kills = [];
   session.on('kill', (kill) => kills.push(kill));
@@ -55,7 +57,7 @@ function setup(options = {}) {
   engine.start(clock);
 
   return {
-    config, engine, session, router, leaderboard, demo, kills, random,
+    config, engine, session, router, leaderboard, demo, director, kills, random,
     now: () => clock,
     /** 時計を進めて 1 フレームぶん動かす。 */
     advance(ms, { steps = 1, withDemo = false } = {}) {

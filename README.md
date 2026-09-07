@@ -28,17 +28,40 @@ TikTok の接続部分は **KAWAII VS BEAUTIFUL / tikhub で作ったものを�
 
 ## 1. 動かす
 
-`index.html` をブラウザで開くだけです (`file://` で動きます)。
+`index.html` をブラウザで開き、**[ OPEN GAME WINDOW ]** を押します
+(`file://` でも動きます)。画面は 2 つに分かれています。
+
+```
+   index.html                       game.html
+   操作画面 (触る)                    ゲーム画面 (配信に映す)
+   ─────────────                    ──────────────
+   LIVE の URL / CONNECT             Game Status
+   BGM (MP3) / 音量                  Battle Field
+   ゲーム・敵・イベントの設定           TOP 10 PLAYER
+   テストパネル                       LIVE EVENT
+   小さいプレビュー
+        │
+        └── [ OPEN GAME WINDOW ] ──────┘
+              同じゲームを見せるだけ
+```
+
+**ゲームは 1 つだけです。** ゲーム画面は別プロセスではなく、操作画面が持っている
+ゲームを読んで描いているだけなので、音量も設定も接続も、変えた瞬間に向こうへ届きます。
+操作画面を閉じるとゲームも終わります。
+
+OBS では **ゲーム画面をウィンドウキャプチャ**してください (9:16 の縦画面です)。
+ブラウザソースを使う場合は `game.html` を直接指定します。この場合は opener が
+いないので、その画面が自分でゲームを動かします。
 
 | URL | 用途 |
 | --- | --- |
-| `index.html` | テストパネル付き (開発・動作確認用) |
-| `index.html?obs=1` | 配信画面のみ (OBS 用) |
+| `index.html` | 操作画面 |
+| `index.html?game=1` | 開いた直後にゲーム画面も開く |
 | `index.html?offline=1` | TikTok に繋がない |
 | `index.html?demo=0` | デモ視聴者を出さない |
 | `index.html?sound=0` | 効果音を鳴らさない (`?mute=1` も同じ) |
 | `index.html?sort=kills` | ランキングの基準を変える (`score` / `kills` / `damage`) |
-| `index.html?ranking=right` | ランキングの位置を固定する (`right` / `below` / `auto`) |
+| `game.html` | ゲーム画面 (OBS のブラウザソース用。単独で動きます) |
 
 **TikTok の実配信と繋ぐ場合**は tikhub を起動し、出てくる URL を開きます
 (→ [11.3](#113-tikhub-から配信する))。
@@ -46,7 +69,7 @@ TikTok の接続部分は **KAWAII VS BEAUTIFUL / tikhub で作ったものを�
 ルールのテスト:
 
 ```
-npm test     # 147 件。ブラウザ不要
+npm test     # 161 件。ブラウザ不要
 npm run check
 ```
 
@@ -120,6 +143,31 @@ MORE ROOM – STAGE 2 ×1.35
 - 列は 5 つまで。それも埋まったら**列の最後の円が強くなります**（送ったぶんは無駄になりません）
 - 順番待ちがある人は、ランキングに `Lv100 +2` のように出ます
 
+### 連続撃破（コンボ）
+
+短い間に続けて倒すと、**とどめを刺した人の**スコアに倍率が掛かります。
+3 連続から画面に `COMBO x3` と出ます。
+
+- 4 秒以内に次を倒すと伸び、途切れると 1 に戻ります
+- 倍率は 1 段 +10%、**最大でも 2 倍まで**。コンボ 1 回で順位がひっくり返ると、
+  こつこつ育てた人の積み上げが軽くなるためです
+- 数えるのは人ごとです。他人が倒しても伸びません
+
+### ウェーブと特殊イベント
+
+90 秒ごとにウェーブが進み、そのうち約半分で**特殊イベント**が起きます
+（平均するとおよそ 3 分に 1 回）。
+
+| 出るもの | 内容 |
+| --- | --- |
+| `BOSS APPEARED` | BOSS が 2 体 |
+| `SWARM INCOMING` | 敵が 12 体まとめて |
+| `RARE ENEMY` | 速くて小さい RARE が 1 体（倒すと +300） |
+| `ELITE SQUAD` | ELITE が 5 体 |
+
+**ウェーブが進んでも、育てた円もランキングも消えません。** 区切りが入るたびに
+積み上げが消えるなら、育てる意味がなくなるためです。増えるのは敵だけです。
+
 - いいねの端数は**ユーザーごとに**次へ持ち越します。7 + 5 = 12 で 1 レベル上がり、2 が残ります。
 - 円には**その人の TikTok プロフィール画像**が入り、**Lv** が出ます。最大レベルは金色の `MAX` と虹色オーラです。
 - 円も敵も**等速直線運動**で、ぶつかると跳ね返ります。
@@ -131,28 +179,60 @@ MORE ROOM – STAGE 2 ×1.35
 
 ## 3. 画面
 
+配信に映すのは `game.html` です。**TikTok LIVE の縦画面 (1080×1920 = 9:16)** が基準。
+
 ```
 ┌──────────────────────────┐
-│ CIRCLE BATTLE            │
+│ WAVE 3            ● LIVE │  ← ウェーブ / 接続状態
 │ ENEMIES DEFEATED         │
 │ 1234                     │
+│ ENEMIES 12 CIRCLES 16    │
+│ BOSS ▓▓▓▓▓▓░░░░  5,168   │  ← 大物が居る間だけ
 ├──────────────────────────┤
 │                          │
-│    ○      ●      ○       │  ← 正方形のバトルフィールド
+│    ○      ●      ○       │  ← 正方形のバトルフィールド (主役)
 │         ●     ○          │     ● 敵 / ○ 視聴者の円
 │   ○         ●            │
 │                          │
 ├──────────────────────────┤
 │ TOP 10 PLAYER      SCORE │
-│ 1 @PlayerA     128 SCORE │
-│ 2 @PlayerB      96 SCORE │
+│ 1 @PlayerA Lv100   128   │  ← 常に 10 行ぶん確保
+│ 2 @PlayerB Lv54     96   │
 │ …                        │
+│ @PlayerZ #23 – 40 TO TOP10│ ← 圏外の人の順位
+├──────────────────────────┤
+│ @PlayerC LIKE → Lv7      │  ← LIVE EVENT (3 行・自動で消える)
+│ @PlayerD NEW RANK #9     │
 └──────────────────────────┘
 ```
 
-TikTok LIVE の縦画面 (9:16) を想定した配置です。
-ランキングは**常時表示**で、縦画面ではフィールドの下、横長の画面では右に出ます
-(`ui.rankingPosition` で固定できます)。11 位以下は表示しません。
+見せる順番は **フィールド > ステータス > TOP10 > イベント**。
+狭い画面で削るのは下からで、フィールドは最後まで正方形のまま残します。
+
+320×568 / 375×667 / 390×844 / 412×915 / 430×932 / 1080×1920 で確認済みです。
+どのサイズでも横スクロールも縦スクロールも出ず、TOP 10 は 10 行ともアイコン付きで
+出て、文字は切れません。横向きにすると `PORTRAIT MODE REQUIRED` になります。
+
+高さは `100dvh` (スマホのアドレスバーで下が切れないように)、ふちは
+`env(safe-area-inset-*)` に加えて右下を少し多めに空けています
+(TikTok のボタン列やコメント欄と重なるため)。見る専用なので、タップしても何も起きません。
+
+### 何が起きたか分かるようにしているもの
+
+| 出るもの | いつ |
+| --- | --- |
+| 円の下に `@名前` | 円が生まれてから 4 秒 |
+| `+42` がその場に飛ぶ | 敵を倒した |
+| `+128  COMBO x5` | 3 連続以上で倒した |
+| `BOSS DEFEATED` | 大物を倒した |
+| `Lv12` | レベルが上がった |
+| `NEW RANK #7` / `RANK UP #2` | ランクイン / TOP3 内で上がった |
+| `@名前 #23 – 40 TO TOP10` | 直近に動いた人が TOP10 の外にいる |
+| `BOSS ▓▓▓░` | HP 1000 以上の敵が居る間だけ |
+| `WAVE 4` / `BOSS APPEARED` | ウェーブが進んだ / 特殊イベント |
+
+**どれも盤面を止めません。** 止めるとその間ゲームが見られないためです。
+文字は出しっぱなしにせず、LIVE EVENT は 3 行・9 秒で消えます。
 
 ---
 
@@ -270,6 +350,20 @@ CB.engine.spawnItem('event');     // その場に 1 つ置く
 
 100 人が同時に操作している状態を**中継サーバー経由**で流したときの結果です
 （1080x1920 / Chromium）。2 つの負荷で測っています。
+
+### 操作画面とゲーム画面を両方開いた状態（100 人が操作、20 秒）
+
+| | 操作画面 (1200×900) | ゲーム画面 (540×960) |
+| --- | --- | --- |
+| FPS | 60.0 | 59.9 |
+| 最悪フレーム | 30ms | 33ms |
+
+players=100 / circles=103 / enemies=31 / 撃破 226、受信 1,336 件すべて反映、エラー 0。
+
+**画面が 2 つでも物理計算は 1 回ぶんです。** `app.update()` は直前に進めたばかりなら
+何もしないので、両方の画面が毎フレーム呼んでも二重には進みません。
+どちらが進めるかを決め打ちにしていないのは、決めた側のウィンドウを最小化すると
+`requestAnimationFrame` が止まってゲームごと止まってしまうためです。
 
 ### 実際の配信に近い負荷（100 人中 20 人が連打、5 分）
 
@@ -483,7 +577,11 @@ TikTok Event  ->  Game Event  ->  Battle Entity  ->  Enemy  ->  Battle  ->  Lead
 | `js/demo.js` | 誰も居ない間の仮の視聴者 | いいえ |
 | `js/avatars.js` | プロフィール画像のキャッシュ | いいえ |
 | `js/audio.js` | 効果音 (WebAudio で合成) | いいえ |
+| `js/director.js` | ウェーブと特殊イベント (敵だけを動かす) | いいえ |
 | `js/renderer.js` | 画面 (canvas + DOM) | いいえ |
+| `js/app.js` | 上を 1 つに束ねた「ゲームの状態」。2 つの画面で共有する | いいえ |
+| `js/game-view.js` | 描画・音・演出の配線 (状態を読むだけ) | いいえ |
+| `js/control.js` | 操作画面の設定 UI | いいえ |
 | `js/config.js` | すべての調整値 | いいえ |
 
 **ゲーム側は TikTok Connector を直接操作しません。**
@@ -536,8 +634,9 @@ KAWAII VS BEAUTIFUL は今までどおり動きます。
 
 `js/config.js` / `js/event-router.js` (SHARE とプロフィール画像に対応した版) /
 `js/game.js` / `js/game-session.js` / `js/leaderboard.js` / `js/demo.js` /
-`js/avatars.js` / `js/audio.js` / `js/renderer.js` / `js/controls.js` / `js/main.js` /
-`index.html` / `css/style.css`
+`js/avatars.js` / `js/audio.js` / `js/renderer.js` / `js/director.js` / `js/app.js` /
+`js/game-view.js` / `js/controls.js` / `js/control.js` / `js/main.js` / `js/game-main.js` /
+`index.html` / `game.html` / `css/control.css` / `css/game.css`
 
 ### 11.3 tikhub から配信する
 
@@ -618,7 +717,11 @@ CB.tiktok.handleEvent({ type: 'member', user: { uniqueId: 'taro' } });   // 入�
 
 CB.engine.spawnEnemy('boss');      // 敵を出す
 CB.engine.spawnItem('power');      // アイテムを置く
+CB.director.trigger('swarm');      // 特殊イベントを起こす (boss / swarm / rare / elite)
 CB.leaderboard.setSort('kills');   // ランキングの基準を変える
-CB.sfx.toggle();                   // 効果音の入 / 切
+CB.app.applySettings({ sfxVolume: 0.5 });   // 音量 (ゲーム画面にも即座に届く)
 CB.reset();                        // 全部やり直す
 ```
+
+操作画面では `CB.app` がゲームの本体です。ゲーム画面で開いたコンソールからは
+`CB.view.app` で同じものに触れます (`window.opener.CB.app` と同じオブジェクトです)。

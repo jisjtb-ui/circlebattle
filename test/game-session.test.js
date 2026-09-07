@@ -505,3 +505,78 @@ test('他の人の円は順番待ちに影響しない', () => {
   assert.strictEqual(circlesOf(engine, 'b').length, 1, '他人が埋まっていると出られない');
   assert.strictEqual(session._player('b').queue.length, 0);
 });
+
+// --------------------------------------------------------------- コンボ
+
+/** 敵を 1 体、指定の人に倒させる。 */
+function killOne(s, user = { id: 'u1', uniqueId: 'yui' }) {
+  const enemy = s.engine.spawnEnemy('normal');
+  s.session._award({
+    enemy,
+    typeId: enemy.typeId,
+    points: 100,
+    at: s.now(),
+    lastHit: { ownerId: user.id, ownerName: user.uniqueId, damage: enemy.maxHp },
+    contributions: [{ ownerId: user.id, ownerName: user.uniqueId, damage: enemy.maxHp }]
+  });
+  return s.kills[s.kills.length - 1];
+}
+
+test('続けて倒すとコンボが伸びる', () => {
+  const s = setup({ config: { combo: { enabled: true, windowMs: 4000 } } });
+
+  assert.strictEqual(killOne(s).combo, 1);
+  s.advance(500);
+  assert.strictEqual(killOne(s).combo, 2);
+  s.advance(500);
+  assert.strictEqual(killOne(s).combo, 3);
+});
+
+test('間が空くとコンボは 1 に戻る', () => {
+  const s = setup({ config: { combo: { enabled: true, windowMs: 4000 } } });
+
+  killOne(s);
+  s.advance(500);
+  assert.strictEqual(killOne(s).combo, 2);
+
+  s.advance(5000);
+  assert.strictEqual(killOne(s).combo, 1, '時間が空いたのに続いている');
+});
+
+test('コンボは人ごとに数える', () => {
+  const s = setup({ config: { combo: { enabled: true, windowMs: 4000 } } });
+  const a = { id: 'u1', uniqueId: 'yui' };
+  const b = { id: 'u2', uniqueId: 'ren' };
+
+  killOne(s, a);
+  s.advance(100);
+  assert.strictEqual(killOne(s, b).combo, 1, '他人の撃破で伸びている');
+  s.advance(100);
+  assert.strictEqual(killOne(s, a).combo, 2);
+});
+
+test('コンボの倍率には上限がある (一気の逆転を作らない)', () => {
+  const s = setup({
+    config: { combo: { enabled: true, windowMs: 4000, bonusPerHit: 0.1, maxBonus: 1 } }
+  });
+
+  let last = null;
+  for (let i = 0; i < 40; i += 1) {
+    last = killOne(s);
+    s.advance(50);
+  }
+
+  assert.ok(last.combo > 20, 'コンボが伸びていない');
+  assert.strictEqual(last.points, 200, '上限 (2 倍) を超えている');
+});
+
+test('コンボを切ると倍率は掛からない', () => {
+  const s = setup({ config: { combo: { enabled: false } } });
+
+  killOne(s);
+  s.advance(100);
+  const kill = killOne(s);
+
+  assert.strictEqual(kill.combo, 1);
+  assert.strictEqual(kill.points, 100);
+});

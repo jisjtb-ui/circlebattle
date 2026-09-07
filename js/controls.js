@@ -1,25 +1,31 @@
 /**
- * controls.js - テストパネル。配信には出さない開発用の入口です。
+ * controls.js - テストパネル。配信には出さない、操作画面の中の入口です。
  *
  * ボタンはすべて「TikTok の生イベント」を作って TikTokAdapter へ渡します。
  * 本番と同じ経路 (Adapter -> Router -> Session -> Engine) を通るので、
  * ここで動けば実際の配信でも同じように動きます。
  *
- *   ?obs=1 を付けるとパネルは出ません (配信画面用)。
+ * 音や設定のスライダーは control.js が持ちます。ここは
+ * 「イベントを流し込む」ことだけに絞ってあります。
  */
 (function (global) {
   'use strict';
 
   function $(id) { return document.getElementById(id); }
 
+  /**
+   * @param {object} options { app } … 共有しているゲーム 1 つだけ渡します
+   */
   function Controls(options) {
     options = options || {};
-    this.tiktok = options.tiktok;
-    this.engine = options.engine;
-    this.session = options.session;
-    this.leaderboard = options.leaderboard;
-    this.renderer = options.renderer;
-    this.sfx = options.sfx || null;
+    var app = options.app;
+
+    this.app = app;
+    this.tiktok = app.tiktok;
+    this.engine = app.engine;
+    this.session = app.session;
+    this.leaderboard = app.leaderboard;
+    this.director = app.director;
 
     this._bind();
   }
@@ -70,45 +76,11 @@
     });
 
     click('btn-boss', function () { self.engine.spawnEnemy('boss'); });
-    click('btn-reset', function () {
-      self.engine.reset();
-      self.leaderboard.reset();
-      self.session.reset();
+    // 特殊イベントは director に頼みます (演出の文字も一緒に出ます)
+    click('btn-swarm', function () {
+      if (self.director) self.director.trigger('swarm');
     });
-
-    // 音の入 / 切と音量。配信中に BGM とぶつかったら下げられるように。
-    var mute = $('btn-mute');
-    if (mute && this.sfx) {
-      var paint = function () {
-        mute.textContent = self.sfx.enabled ? 'SOUND ON' : 'SOUND OFF';
-        mute.setAttribute('aria-pressed', String(self.sfx.enabled));
-      };
-      paint();
-      mute.addEventListener('click', function () {
-        self.sfx.toggle();
-        self.sfx.resume();
-        var badge = $('muted');
-        if (badge && !self.sfx.enabled) badge.hidden = true;
-        paint();
-      });
-    }
-
-    var volume = $('sfx-volume');
-    if (volume && this.sfx) {
-      volume.value = String(Math.round(this.sfx.volume * 100));
-      volume.addEventListener('input', function () {
-        self.sfx.setVolume(Number(volume.value) / 100);
-      });
-    }
-
-    var sort = $('sort-select');
-    if (sort) {
-      sort.value = this.leaderboard.sortBy;
-      sort.addEventListener('change', function () {
-        self.leaderboard.setSort(sort.value);
-        self.renderer.renderRanking(true);
-      });
-    }
+    click('btn-reset', function () { self.app.reset(); });
 
     // 中継サーバーに「この配信へ繋いで」と頼む。tikhub が動いていれば効きます。
     var form = $('connect-form');

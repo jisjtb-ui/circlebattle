@@ -97,12 +97,23 @@ test('音を出せない環境でも落ちない', () => {
 
 test('敵の種類ごとに撃破音の高さが決まっている', () => {
   const config = makeConfig();
-  const pitches = config.enemies.types.map((type) => type.killPitch);
 
-  assert.strictEqual(pitches.length, config.enemies.types.length);
-  // 強い敵ほど低い音になっている
-  for (let i = 1; i < pitches.length; i += 1) {
-    assert.ok(pitches[i] < pitches[i - 1],
-      `${config.enemies.types[i].id} の音が前の敵より低くない`);
+  config.enemies.types.forEach((type) => {
+    assert.strictEqual(typeof type.killPitch, 'number', `${type.id} に撃破音がない`);
+  });
+
+  // 通常湧きの敵 (weight > 0) は、強いものほど低い音になっている
+  const ladder = config.enemies.types.filter((type) => type.weight > 0);
+  for (let i = 1; i < ladder.length; i += 1) {
+    assert.ok(ladder[i].killPitch < ladder[i - 1].killPitch,
+      `${ladder[i].id} の音が前の敵より低くない`);
   }
+
+  // RARE は強さの序列から外れた特別枠なので、どの敵とも違う高さで鳴らす
+  const rare = config.enemies.types.find((type) => type.id === 'rare');
+  assert.ok(rare, 'RARE がいない');
+  const others = config.enemies.types.filter((type) => type.id !== 'rare');
+  others.forEach((type) => {
+    assert.notStrictEqual(rare.killPitch, type.killPitch, `RARE と ${type.id} の音が同じ`);
+  });
 });

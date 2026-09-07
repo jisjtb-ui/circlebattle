@@ -32,6 +32,8 @@
     this.users = {};          // userId -> record
     this.version = 0;         // 変わるたびに増える。描画側の差分判定用。
     this._listeners = [];
+    /** 直近に動いた本物の視聴者。「YOU #23」を出す相手を選ぶのに使います。 */
+    this._lastActive = null;
   }
 
   Leaderboard.FIELDS = FIELDS;
@@ -79,15 +81,28 @@
         /** デモ視聴者かどうか。本物のイベントが来たら消せるように印を付けます。 */
         demo: Boolean(user.demo)
       };
+      if (!record.demo) this._lastActive = record;
       this._changed();
       return record;
     }
 
+    if (!record.demo) this._lastActive = record;
     if (user.uniqueId) record.userName = user.uniqueId;
     if (user.displayName) record.displayName = user.displayName;
     if (user.profileImageUrl) record.profileImageUrl = user.profileImageUrl;
     record.lastActivity = at != null ? at : this.now();
     return record;
+  };
+
+  /**
+   * 直近に動いた本物の視聴者の記録。まだ誰も居なければ null。
+   *
+   * 画面はこれを「今この瞬間にいちばん自分ごとになっている人」として扱い、
+   * TOP10 の外に居るならその順位を出します。
+   */
+  Leaderboard.prototype.mostRecent = function () {
+    var record = this._lastActive;
+    return record && this.users[record.userId] ? record : null;
   };
 
   Leaderboard.prototype.get = function (userId) {
@@ -185,6 +200,18 @@
     return limit > 0 ? list.slice(0, limit) : list;
   };
 
+  /**
+   * その人が今何位か (1 から)。ランキング外の人も数えます。
+   * TOP10 に入っていない人へ「YOU #23」と出すために使います。
+   */
+  Leaderboard.prototype.rankOf = function (userId) {
+    var all = this.top(0);
+    for (var i = 0; i < all.length; i += 1) {
+      if (all[i].userId === String(userId)) return i + 1;
+    }
+    return 0;
+  };
+
   Leaderboard.prototype.count = function () {
     return Object.keys(this.users).length;
   };
@@ -201,6 +228,7 @@
 
   Leaderboard.prototype.reset = function () {
     this.users = {};
+    this._lastActive = null;
     this._changed();
     return this;
   };

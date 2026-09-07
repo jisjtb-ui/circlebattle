@@ -4,97 +4,143 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>CIRCLE BATTLE</title>
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/control.css">
 </head>
 <body>
 
 <!-- ============================================================
-     TikTok LIVE の縦画面を想定した配置。
-       上   : ENEMIES DEFEATED
-       中央 : 正方形のバトルフィールド
-       右/下: TOP 10 PLAYER (常時表示)
-     ?obs=1 でテストパネルを隠すと、そのまま配信画面になります。
+     操作画面。配信には映しません。
+
+     ここに「触るもの」を全部置きます: 接続 / 音 / ゲームの設定 / テスト。
+     配信に映すのは [ OPEN GAME WINDOW ] で開くゲームウィンドウのほうです。
+
+     ゲームウィンドウは別プロセスではありません。この画面が持っている
+     ゲームの状態 (window.CB.app) をそのまま描くので、ここで設定を変えると
+     すぐ向こうに反映されます。
      ============================================================ -->
-<div class="app" id="app">
+<div class="control">
 
-  <header class="hud">
-    <div class="hud__head">
-      <h1 class="hud__title" id="title">CIRCLE BATTLE</h1>
-      <span class="hud__right">
-        <!-- ブラウザに自動再生を止められている間だけ出る -->
-        <span class="muted" id="muted" hidden>🔇 クリックで音が出ます</span>
-        <span class="status" id="status" data-state="offline"><i></i><span id="status-text">…</span></span>
-      </span>
-    </div>
-
-    <div class="hud__defeated">
-      <span class="hud__label">ENEMIES DEFEATED</span>
-      <span class="hud__value" id="defeated">0</span>
-    </div>
-
-    <div class="hud__meta">
-      <span>ENEMIES <b id="enemies-alive">0</b></span>
-      <span>CIRCLES <b id="circles-alive">0</b></span>
-      <span>PLAYERS <b id="players">0</b></span>
-    </div>
+  <header class="head">
+    <h1 class="head__title">CIRCLE BATTLE <span>CONTROL</span></h1>
+    <span class="head__right">
+      <span class="muted" id="muted" hidden>🔇 クリックで音が出ます</span>
+      <span class="status" id="status" data-state="offline"><i></i><span id="status-text">…</span></span>
+    </span>
   </header>
 
-  <main class="battle">
-    <div class="field-wrap">
-      <canvas id="field"></canvas>
-      <div class="notice" id="notice" hidden></div>
-      <!-- フィールドが広がった / 戻ったときだけ出る -->
-      <div class="stage-banner" id="stage-banner" hidden>
-        <span class="stage-banner__main" id="stage-banner-main">STAGE EXPANDED</span>
-        <span class="stage-banner__sub" id="stage-banner-sub"></span>
-      </div>
+  <div class="columns">
+
+    <!-- ------------------------------------------------ 左: 操作 -->
+    <div class="col">
+
+      <section class="card card--go">
+        <h2 class="card__title">GAME WINDOW</h2>
+        <p class="card__note">
+          配信に映すのはこちらです。9:16 の縦画面なので、OBS の
+          「ウィンドウキャプチャ」でそのまま取れます。
+        </p>
+        <button type="button" class="big" id="open-game">[ OPEN GAME WINDOW ]</button>
+        <p class="card__note" id="game-window-state">未オープン</p>
+      </section>
+
+      <section class="card">
+        <h2 class="card__title">TIKTOK LIVE</h2>
+        <form class="row" id="connect-form">
+          <input id="connect-input" type="text" placeholder="LIVE の URL または @ユーザー名" autocomplete="off">
+          <button type="submit" id="connect-go">CONNECT</button>
+        </form>
+        <p class="card__note" id="connect-hint"></p>
+      </section>
+
+      <section class="card">
+        <h2 class="card__title">AUDIO</h2>
+        <div class="row">
+          <button type="button" id="btn-mute">SOUND ON</button>
+          <label>SFX <input id="sfx-volume" type="range" min="0" max="100" step="5"></label>
+          <output id="sfx-volume-out">35%</output>
+        </div>
+        <div class="row">
+          <label class="file">BGM <input id="bgm-file" type="file" accept="audio/*"></label>
+        </div>
+        <div class="row">
+          <button type="button" id="btn-bgm">PLAY</button>
+          <label>BGM VOL <input id="bgm-volume" type="range" min="0" max="100" step="5"></label>
+          <output id="bgm-volume-out">40%</output>
+        </div>
+        <p class="card__note" id="bgm-name">ファイル未選択</p>
+      </section>
+
+      <section class="card">
+        <h2 class="card__title">TEST EVENTS</h2>
+        <div class="row">
+          <label>USER <input id="test-user" type="text" value="tester" autocomplete="off"></label>
+          <button type="button" id="btn-like10">LIKE x10</button>
+          <button type="button" id="btn-like100">LIKE x100</button>
+          <button type="button" id="btn-follow">FOLLOW</button>
+          <button type="button" id="btn-share">SHARE</button>
+          <button type="button" id="btn-join">JOIN</button>
+          <button type="button" id="btn-comment">COMMENT</button>
+        </div>
+        <div class="row">
+          <label>GIFT <input id="gift-coins" type="number" value="10" min="1" step="1"></label>
+          <button type="button" id="btn-gift">SEND GIFT</button>
+          <button type="button" id="btn-crowd">CROWD</button>
+          <button type="button" id="btn-boss">SPAWN BOSS</button>
+          <button type="button" id="btn-swarm">SPAWN SWARM</button>
+          <button type="button" id="btn-reset">RESET</button>
+        </div>
+      </section>
     </div>
 
-    <aside class="ranking">
-      <h2 class="ranking__title">
-        TOP 10 PLAYER
-        <span class="ranking__metric" id="ranking-metric">SCORE</span>
-      </h2>
-      <ol class="ranking__list" id="ranking-list"></ol>
-      <p class="ranking__empty" id="ranking-empty">LIKE / FOLLOW / SHARE / GIFT で参加</p>
-    </aside>
-  </main>
+    <!-- ------------------------------------------------ 右: 設定 -->
+    <div class="col">
 
-  <!-- 開発用。?obs=1 を付けると出ません。 -->
-  <section class="panel" id="panel">
-    <form class="panel__row panel__row--connect" id="connect-form">
-      <input id="connect-input" type="text" placeholder="LIVE の URL または @ユーザー名" autocomplete="off">
-      <button type="submit" id="connect-go">CONNECT</button>
-      <span class="panel__hint" id="connect-hint"></span>
-    </form>
+      <section class="card">
+        <h2 class="card__title">PREVIEW</h2>
+        <!-- 操作画面にも同じ盤面を出します。音はゲームウィンドウ側だけです。 -->
+        <div class="preview">
+          <canvas id="field"></canvas>
+          <div class="notice" id="notice" hidden></div>
+          <div class="stage-banner" id="stage-banner" hidden>
+            <span class="stage-banner__main" id="stage-banner-main"></span>
+            <span class="stage-banner__sub" id="stage-banner-sub"></span>
+          </div>
+        </div>
+        <div class="row row--meta">
+          <span>WAVE <b id="wave">1</b></span>
+          <span>DEFEATED <b id="defeated">0</b></span>
+          <span>ENEMIES <b id="enemies-alive">0</b></span>
+          <span>CIRCLES <b id="circles-alive">0</b></span>
+          <span>PLAYERS <b id="players">0</b></span>
+        </div>
+      </section>
 
-    <div class="panel__row">
-      <label>USER <input id="test-user" type="text" value="tester" autocomplete="off"></label>
-      <button type="button" id="btn-like10">LIKE x10</button>
-      <button type="button" id="btn-like100">LIKE x100</button>
-      <button type="button" id="btn-follow">FOLLOW</button>
-      <button type="button" id="btn-share">SHARE</button>
-      <button type="button" id="btn-join">JOIN</button>
-      <label>GIFT <input id="gift-coins" type="number" value="10" min="1" step="1"></label>
-      <button type="button" id="btn-gift">SEND GIFT</button>
-      <button type="button" id="btn-comment">COMMENT</button>
+      <section class="card">
+        <h2 class="card__title">GAME</h2>
+        <div class="row">
+          <label>SORT
+            <select id="sort-select">
+              <option value="score">score</option>
+              <option value="kills">kills</option>
+              <option value="damage">damage</option>
+            </select>
+          </label>
+          <label class="check"><input id="demo-enabled" type="checkbox"> DEMO VIEWERS</label>
+        </div>
+        <div class="row" data-setting-group></div>
+      </section>
+
+      <section class="card">
+        <h2 class="card__title">ENEMIES</h2>
+        <div class="row" data-setting-group="enemies"></div>
+      </section>
+
+      <section class="card">
+        <h2 class="card__title">LIKE / FOLLOW / SHARE / GIFT</h2>
+        <div class="row" data-setting-group="viewers"></div>
+      </section>
     </div>
-
-    <div class="panel__row">
-      <button type="button" id="btn-crowd">CROWD</button>
-      <button type="button" id="btn-boss">SPAWN BOSS</button>
-      <button type="button" id="btn-reset">RESET</button>
-      <button type="button" id="btn-mute">SOUND ON</button>
-      <label>VOL <input id="sfx-volume" type="range" min="0" max="100" step="5"></label>
-      <label>SORT
-        <select id="sort-select">
-          <option value="score">score</option>
-          <option value="kills">kills</option>
-          <option value="damage">damage</option>
-        </select>
-      </label>
-    </div>
-  </section>
+  </div>
 </div>
 
 <script src="js/config.js"></script>
@@ -102,12 +148,16 @@
 <script src="js/game.js"></script>
 <script src="js/game-session.js"></script>
 <script src="js/event-router.js"></script>
+<script src="js/director.js"></script>
 <script src="js/demo.js"></script>
 <script src="js/avatars.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/renderer.js"></script>
-<script src="js/controls.js"></script>
 <script src="js/tiktok-adapter.js"></script>
+<script src="js/app.js"></script>
+<script src="js/game-view.js"></script>
+<script src="js/controls.js"></script>
+<script src="js/control.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

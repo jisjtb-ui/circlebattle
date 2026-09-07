@@ -41,6 +41,8 @@
     this.players = {};
     /** 本物の視聴者イベントを受け取ったか (デモを止める判断に使う)。 */
     this.realEventSeen = false;
+    /** userId -> { count, at } 連続撃破。短い間に続けて倒すと伸びます。 */
+    this.combos = {};
 
     this.stats = { likes: 0, follows: 0, shares: 0, gifts: 0, joins: 0, comments: 0, circles: 0 };
     this._listeners = {};
@@ -52,6 +54,21 @@
 
   GameSession.prototype.on = function (name, handler) {
     (this._listeners[name] || (this._listeners[name] = [])).push(handler);
+    return this;
+  };
+
+  /**
+   * 購読をやめる。
+   *
+   * 画面は 2 つ (操作画面 / ゲームウィンドウ) あり、ゲームウィンドウは
+   * 閉じられます。閉じた画面の handler を残したままにすると、
+   * 既に無いウィンドウの音や DOM を触りにいってエラーになります。
+   */
+  GameSession.prototype.off = function (name, handler) {
+    var handlers = this._listeners[name];
+    if (!handlers) return this;
+    var i = handlers.indexOf(handler);
+    if (i !== -1) handlers.splice(i, 1);
     return this;
   };
 
@@ -123,6 +140,29 @@
    * KILL 数は必ず 1 人にだけ付きます (割ると整数でなくなるため)。
    * 誰に付けるかは scoring.killCredit で選べます。
    */
+  /**
+   * 連続撃破を数える。
+   *
+   * 短い間に続けて倒すほど伸び、途切れると 1 に戻ります。
+   * 倍率は控えめ (最大 +100%) にしてあります。ここで一気に逆転できてしまうと、
+   * こつこつ育てた人の積み上げが軽くなるためです。
+   *
+   * @returns {object} { count, bonus }
+   */
+  GameSession.prototype._combo = function (ownerId, at) {
+    var combo = this.config.combo;
+    if (!combo || !combo.enabled) return { count: 1, bonus: 0 };
+
+    var current = this.combos[ownerId];
+    var count = (current && at - current.at <= combo.windowMs) ? current.count + 1 : 1;
+    this.combos[ownerId] = { count: count, at: at };
+
+    return {
+      count: count,
+      bonus: Math.min((count - 1) * combo.bonusPerHit, combo.maxBonus)
+    };
+  };
+
   GameSession.prototype._award = function (kill) {
     if (!this.leaderboard) { this.emit('kill', kill); return; }
 
@@ -141,6 +181,13 @@
     }
     if (!credited && contributions.length) credited = contributions[0];
     if (!credited) { this.emit('kill', kill); return; }
+
+    // 連続撃破の倍率は、とどめを刺した人にだけ掛かる
+    var combo = this._combo(credited.ownerId, kill.at);
+    points = Math.round(points * (1 + combo.bonus));
+    kill.combo = combo.count;
+    kill.points = points;
+    kill.credited = credited;
 
     if (scoring.mode === 'damage' && contributions.length) {
       var total = contributions.reduce(function (sum, c) { return sum + c.damage; }, 0) || 1;
@@ -417,10 +464,22 @@
   };
 
   /** LIKE の端数と、誰がどの円を育てているかを消す (次の配信を始めるときなど)。 */
+  /**
+   * 次のレベルまであと何 LIKE か。
+   *
+   * 「あと 3 回」が見えると、そこで止めずにもう一押しする理由になります。
+   * 画面に出すためだけの読み取りで、進行には影響しません。
+   */
+  GameSession.prototype.likesToNextLevel = function (userId) {
+    var per = this.config.viewers.levels.likesPerLevel;
+    return per - ((this.likeBuckets[userId] || 0) % per);
+  };
+
   GameSession.prototype.reset = function () {
     this.likeBuckets = {};
     this.players = {};
     this.users = {};
+    this.combos = {};
     this.realEventSeen = false;
     return this;
   };

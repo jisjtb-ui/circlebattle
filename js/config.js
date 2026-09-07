@@ -14,19 +14,27 @@
 
     /** 画面まわり。ゲームのルールには影響しません。 */
     ui: {
-      title: 'CIRCLE BATTLE',
-      subtitle: 'VIEWERS VS ENEMIES',
       /** ランキングに出す人数。 */
       rankingSize: 10,
-      /**
-       * ランキングの位置。
-       *   'auto'  … 横長ならフィールドの右、縦長なら下
-       *   'right' … 常に右
-       *   'below' … 常に下
-       */
-      rankingPosition: 'auto',
       /** 撃破や参加の通知を出す時間 (ミリ秒)。 */
-      noticeMs: 1800
+      noticeMs: 1800,
+      /** 画面下に出す LIVE EVENT の行数。多いとスマホでは読めません。 */
+      eventLines: 3,
+      /** 1 件が消えるまでの時間 (ミリ秒)。 */
+      eventLifeMs: 9000,
+      /** 生まれた直後の円に名前を出す時間 (ミリ秒)。0 で出しません。 */
+      nameTagMs: 4000,
+      /** 撃破のたびに飛ぶ「+1 KILL」などの表示時間 (ミリ秒)。 */
+      floatMs: 1100,
+      /** 同時に飛ばす数の上限。大量撃破で文字だらけになるのを防ぎます。 */
+      floatMax: 14,
+      /**
+       * 画面上部に HP ゲージを出す敵の最低 HP。
+       *
+       * BOSS を常時出すと「またか」で終わるので、居るときだけ出します。
+       * 「あと少しで倒せる」が見えると、みんなで殴りにいく理由になります。
+       */
+      bossBarMinHp: 1000
     },
 
     /** バトルフィールド。正方形。すべての座標はこの単位で持ちます。 */
@@ -165,7 +173,12 @@
         { id: 'normal', label: 'NORMAL', hp: 100,  radius: 20, speed: 58, attack: 6,  attackIntervalMs: 700, points: 1,   weight: 62, color: '#67e8f9', killPitch: 1.45 },
         { id: 'strong', label: 'STRONG', hp: 300,  radius: 28, speed: 48, attack: 12, attackIntervalMs: 700, points: 5,   weight: 24, color: '#fbbf24', killPitch: 1.15 },
         { id: 'elite',  label: 'ELITE',  hp: 1000, radius: 40, speed: 38, attack: 26, attackIntervalMs: 650, points: 20,  weight: 11, color: '#f472b6', killPitch: 0.88 },
-        { id: 'boss',   label: 'BOSS',   hp: 5000, radius: 66, speed: 26, attack: 60, attackIntervalMs: 600, points: 100, weight: 3,  color: '#ef4444', killPitch: 0.6 }
+        { id: 'boss',   label: 'BOSS',   hp: 5000, radius: 66, speed: 26, attack: 60, attackIntervalMs: 600, points: 100, weight: 3,  color: '#ef4444', killPitch: 0.6 },
+        /**
+         * 特殊イベントでしか出ない敵 (weight: 0 なので通常抽選には乗りません)。
+         * 硬くはないが逃げ足が速く、倒すと大きい。見つけたら追いかける価値がある存在。
+         */
+        { id: 'rare',   label: 'RARE',   hp: 2500, radius: 34, speed: 120, attack: 20, attackIntervalMs: 700, points: 300, weight: 0,  color: '#c084fc', killPitch: 1.6 }
       ],
 
       spawn: {
@@ -420,6 +433,31 @@
     },
 
     /**
+     * 進行役 (Director)。
+     *
+     * 一定時間ごとに WAVE を進め、ときどき特殊イベントを起こします。
+     * 「次に何か起きるかもしれない」を作るためのもので、**視聴者の円と
+     * ランキングには一切触りません**。区切りは敵側にだけ入ります。
+     */
+    director: {
+      enabled: true,
+      /** ウェーブの長さ (ミリ秒)。 */
+      waveMs: 90000,
+      /**
+       * ウェーブの節目に特殊イベントが起きる確率。
+       * 毎回起こすと「特殊」ではなくなるので、半分程度にしています。
+       */
+      eventChance: 0.5,
+
+      events: [
+        { id: 'boss',  label: 'BOSS APPEARED',  sub: 'TAKE IT DOWN TOGETHER',       weight: 3, spawn: { type: 'boss',   count: 2 } },
+        { id: 'swarm', label: 'SWARM INCOMING', sub: 'THEY KEEP COMING',           weight: 3, spawn: { type: null,     count: 12 } },
+        { id: 'rare',  label: 'RARE ENEMY',     sub: '+300 SCORE IF YOU KILL IT',  weight: 2, spawn: { type: 'rare',   count: 1 } },
+        { id: 'elite', label: 'ELITE SQUAD',    sub: 'FIVE ELITES AT ONCE',       weight: 2, spawn: { type: 'elite',  count: 5 } }
+      ]
+    },
+
+    /**
      * アイテム。
      *
      * 一定間隔でフィールドに置かれ、**視聴者の円だけが拾えます**。
@@ -570,6 +608,23 @@
           ]
         }
       }
+    },
+
+    /**
+     * コンボ。
+     *
+     * 同じ人が短い間に続けて倒すと COMBO が伸びます。倍率は小さく、
+     * 上限も低めです (これで一気に逆転できると、育てた意味が薄れるため)。
+     */
+    combo: {
+      enabled: true,
+      /** この時間内に次を倒すと続く (ミリ秒)。 */
+      windowMs: 4000,
+      /** 何連続から画面に出すか。 */
+      showFrom: 3,
+      /** 1 連続あたりのスコア倍率の増分と上限。 */
+      bonusPerHit: 0.1,
+      maxBonus: 1.0
     },
 
     /** ランキング。 */

@@ -127,6 +127,21 @@
     return this;
   };
 
+  /**
+   * 購読をやめる。
+   *
+   * 画面は 2 つ (操作画面 / ゲームウィンドウ) あり、ゲームウィンドウは
+   * 閉じられます。閉じた画面の handler を残したままにすると、
+   * 既に無いウィンドウの音や DOM を触りにいってエラーになります。
+   */
+  BattleEngine.prototype.off = function (name, handler) {
+    var handlers = this._listeners[name];
+    if (!handlers) return this;
+    var i = handlers.indexOf(handler);
+    if (i !== -1) handlers.splice(i, 1);
+    return this;
+  };
+
   BattleEngine.prototype.emit = function (name, payload) {
     var handlers = this._listeners[name];
     if (!handlers) return;

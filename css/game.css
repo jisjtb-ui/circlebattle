@@ -1,0 +1,543 @@
+/*
+ * game.css - 配信に映すゲーム画面だけの見た目。
+ *
+ * 基準は TikTok LIVE の縦画面 (1080×1920 = 9:16)。実機は 320×568 から
+ * 430×932 まで幅があるので、寸法はすべて clamp() で「最小値つきの伸縮」に
+ * してあります。どれだけ狭くても読めなくならないのが目的です。
+ *
+ * 決めごと:
+ *   - 横スクロールも縦スクロールもさせない (overflow:hidden + 1 画面に収める)
+ *   - フィールドは常に正方形。潰さない・引き伸ばさない
+ *   - TOP 10 は常に 10 行ぶんの場所を確保する (増減で他が動かない)
+ *   - 高さは 100dvh。100vh だとスマホのアドレスバーぶん下が切れます
+ *   - 右端と下端は TikTok の UI (ボタン列・コメント欄) と重なるので少し空ける
+ *   - 見る専用。タップしても何も起きません
+ *
+ * 優先順位は フィールド > ステータス > TOP10 > イベント です。
+ * 狭いときに削るのは下から。フィールドは最後まで残します。
+ */
+
+:root {
+  --bg: #070714;
+  --bg-panel: rgba(18, 20, 44, 0.82);
+  --line: rgba(120, 140, 255, 0.22);
+  --text: #eef1ff;
+  --muted: #97a0c8;
+  --accent: #5eead4;
+
+  --gap: clamp(5px, 1.1dvh, 14px);
+
+  /* 画面のふち。TikTok の UI ぶんを右と下に少しだけ足します。 */
+  --pad-top: calc(env(safe-area-inset-top, 0px) + clamp(6px, 1.2dvh, 18px));
+  --pad-left: calc(env(safe-area-inset-left, 0px) + clamp(8px, 2.5vw, 26px));
+  --pad-right: calc(env(safe-area-inset-right, 0px) + clamp(10px, 4vw, 40px));
+  --pad-bottom: calc(env(safe-area-inset-bottom, 0px) + clamp(10px, 2.4dvh, 34px));
+}
+
+* { box-sizing: border-box; }
+
+/* display を持つ要素にも hidden 属性を効かせる (ランキングの空行など) */
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, -apple-system, 'Hiragino Kaku Gothic ProN', sans-serif;
+  overflow: hidden;
+  /* 見る専用。長押しの選択や二本指の拡大で画面がずれないようにします。 */
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  overscroll-behavior: none;
+}
+
+body {
+  background-image:
+    radial-gradient(900px 600px at 20% -10%, rgba(94, 234, 212, 0.10), transparent 60%),
+    radial-gradient(900px 600px at 90% 110%, rgba(244, 114, 182, 0.12), transparent 60%);
+}
+
+/*
+ * 100dvh を使います。100vh はアドレスバーが出ている間の高さを含まないので、
+ * スマホだと下のイベント行が画面外へ落ちます。
+ */
+.game {
+  height: 100dvh;
+  display: grid;
+  /* ステータス / フィールド / TOP10 / イベント */
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: var(--gap);
+  padding: var(--pad-top) var(--pad-right) var(--pad-bottom) var(--pad-left);
+}
+
+/* ---------------------------------------------------------- ステータス */
+
+.status { display: grid; gap: clamp(2px, 0.4dvh, 6px); }
+
+.status__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.status__wave {
+  font-size: clamp(10px, 1.6dvh, 18px);
+  letter-spacing: 0.24em;
+  font-weight: 800;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.status__wave b { font-variant-numeric: tabular-nums; }
+
+.status__conn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: clamp(9px, 1.2dvh, 13px);
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.status__conn span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status__conn i {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #64748b;
+  box-shadow: 0 0 10px currentColor;
+}
+
+.status__conn[data-state="live"] i { background: #22c55e; }
+.status__conn[data-state="waiting"] i { background: #f59e0b; }
+.status__conn[data-state="bridge"] i { background: #38bdf8; }
+.status__conn[data-state="offline"] i { background: #64748b; }
+
+.status__muted {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(250, 204, 21, 0.5);
+  background: rgba(250, 204, 21, 0.12);
+  color: #fde68a;
+  font-size: clamp(9px, 1.1dvh, 12px);
+  white-space: nowrap;
+}
+
+.status__defeated { display: grid; line-height: 1.02; }
+
+.status__label {
+  font-size: clamp(8px, 1.1dvh, 13px);
+  letter-spacing: 0.28em;
+  color: var(--muted);
+}
+
+.status__value {
+  font-size: clamp(26px, 5.2dvh, 76px);
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 22px rgba(94, 234, 212, 0.45);
+}
+
+.status__meta {
+  display: flex;
+  gap: clamp(8px, 3vw, 22px);
+  font-size: clamp(8px, 1.1dvh, 13px);
+  letter-spacing: 0.14em;
+  color: var(--muted);
+}
+
+.status__meta b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* 大物が居る間だけ出る HP ゲージ。「あと少し」が見えると全員で殴りにいきます。 */
+.boss {
+  --color: #f472b6;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(10, 12, 30, 0.75);
+  border: 1px solid color-mix(in srgb, var(--color) 55%, transparent);
+}
+
+.boss__label,
+.boss__value {
+  font-size: clamp(9px, 1.2dvh, 14px);
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  color: var(--color);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.boss__track {
+  height: clamp(5px, 0.8dvh, 10px);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.boss__fill {
+  display: block;
+  height: 100%;
+  width: 100%;
+  border-radius: 999px;
+  background: var(--color);
+  box-shadow: 0 0 14px var(--color);
+  transition: width 160ms linear;
+}
+
+/* -------------------------------------------------------- フィールド */
+
+.field-wrap {
+  position: relative;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  /* 下の 100cqh (この枠の高さ) を使うために必要 */
+  container-type: size;
+}
+
+/*
+ * フィールドは常に正方形。短い辺に合わせるので、どの端末でも歪みません。
+ * 物理は時間で進むため、ここで大きさが変わってもゲームの速さは変わりません。
+ */
+#field {
+  width: min(100%, 100cqh);
+  aspect-ratio: 1 / 1;
+  max-width: 100%;
+  max-height: 100%;
+  border: 1px solid var(--line);
+  border-radius: clamp(8px, 1.6vw, 18px);
+  box-shadow: 0 0 60px rgba(80, 120, 255, 0.16) inset;
+  background: #090a18;
+}
+
+.notice {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  max-width: 92%;
+  transform: translateX(-50%);
+  padding: 4px 14px;
+  border-radius: 999px;
+  background: rgba(10, 12, 30, 0.9);
+  border: 1px solid var(--line);
+  font-size: clamp(10px, 1.4dvh, 16px);
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notice--in { animation: notice-in 240ms ease-out; }
+
+.stage-banner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  max-width: 94%;
+  padding: clamp(8px, 1.6dvh, 18px) clamp(16px, 6vw, 42px);
+  border-radius: 16px;
+  background: rgba(6, 8, 20, 0.92);
+  border: 1px solid rgba(94, 234, 212, 0.55);
+  box-shadow: 0 0 50px rgba(94, 234, 212, 0.25);
+  text-align: center;
+  pointer-events: none;
+}
+
+.stage-banner__main {
+  font-size: clamp(18px, 3.4dvh, 52px);
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+  text-shadow: 0 0 26px rgba(94, 234, 212, 0.5);
+  white-space: nowrap;
+}
+
+.stage-banner__sub {
+  font-size: clamp(8px, 1.3dvh, 16px);
+  letter-spacing: 0.26em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.stage-banner--in { animation: stage-pop 2000ms ease-out forwards; }
+
+@keyframes stage-pop {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.82); }
+  12%  { opacity: 1; transform: translate(-50%, -50%) scale(1.04); }
+  20%  { transform: translate(-50%, -50%) scale(1); }
+  75%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.06); }
+}
+
+@keyframes notice-in {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* ----------------------------------------------------------- TOP 10 */
+
+/*
+ * 10 行ぶんの高さを always 確保します。人が増えるたびに枠が伸びると、
+ * フィールドの大きさまで動いて配信が落ち着きません。
+ */
+.ranking {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 4px;
+  height: clamp(162px, 25dvh, 460px);
+  padding: clamp(5px, 0.9dvh, 12px) clamp(6px, 2vw, 14px);
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.ranking__title {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: clamp(10px, 1.5dvh, 18px);
+  letter-spacing: 0.2em;
+  font-weight: 800;
+}
+
+.ranking__metric {
+  font-size: clamp(8px, 1.1dvh, 12px);
+  letter-spacing: 0.14em;
+  color: var(--accent);
+}
+
+.ranking__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  /* 10 行を等分。行が足りなくても はみ出しません。 */
+  grid-template-rows: repeat(10, minmax(0, 1fr));
+  gap: 2px;
+  min-height: 0;
+  overflow: hidden;
+  /*
+   * 中の文字とアイコンを「1 行の高さ」から決めます (下の cqh)。
+   * 画面の高さから決めると、狭い端末でアイコンが行からはみ出して
+   * 頭が切れます。行に合わせておけば、どの端末でも必ず収まります。
+   */
+  container-type: size;
+}
+
+.rank {
+  --hue: 200;
+  display: grid;
+  grid-template-columns: 2.2ch auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: clamp(4px, 1.6vw, 10px);
+  padding: 0 5px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.035);
+  font-size: clamp(8px, 5.4cqh, 16px);
+  min-width: 0;
+  animation: rank-in 220ms ease-out;
+}
+
+@keyframes rank-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.rank:nth-child(1) { background: rgba(250, 204, 21, 0.16); }
+.rank:nth-child(2) { background: rgba(226, 232, 240, 0.13); }
+.rank:nth-child(3) { background: rgba(217, 119, 6, 0.14); }
+
+.rank__no {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* アイコンは小さくても「自分だ」と分かる大きさを保ちます。 */
+.rank__avatar {
+  position: relative;
+  width: clamp(10px, 7.4cqh, 34px);
+  height: clamp(10px, 7.4cqh, 34px);
+  border-radius: 50%;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: hsl(var(--hue), 60%, 30%);
+  border: 2px solid hsl(var(--hue), 90%, 65%);
+}
+
+.rank__avatar img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.rank__initial { font-weight: 800; font-size: 0.8em; }
+
+.rank__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rank__level {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.82em;
+  font-weight: 700;
+  color: #fde68a;
+  background: rgba(250, 204, 21, 0.14);
+  border-radius: 5px;
+  padding: 0 5px;
+  white-space: nowrap;
+}
+
+.rank__value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.ranking__empty {
+  margin: auto 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: clamp(9px, 1.2dvh, 14px);
+  line-height: 1.8;
+  /* 説明は狭い画面では折り返します (切れると読めないため) */
+  text-wrap: balance;
+}
+
+/* TOP10 の外に居る人の順位。追いかける目標が無いと、そこで見るのをやめます。 */
+.ranking__self {
+  margin: 0;
+  padding-top: 3px;
+  border-top: 1px solid var(--line);
+  text-align: center;
+  font-size: clamp(9px, 1.2dvh, 14px);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #fbbf24;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --------------------------------------------------------- LIVE EVENT */
+
+/*
+ * 数行だけ。放っておくと消えます。ここを増やすと文字の壁になり、
+ * 肝心のフィールドから目が離れます。
+ */
+.events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+  align-content: end;
+  /* config.ui.eventLines と揃えてあります (3 行) */
+  min-height: calc(3 * clamp(13px, 1.9dvh, 24px));
+}
+
+.event {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 6px;
+  height: clamp(13px, 1.9dvh, 24px);
+  padding: 0 8px;
+  border-radius: 5px;
+  background: rgba(10, 12, 30, 0.6);
+  border-left: 3px solid var(--muted);
+  font-size: clamp(9px, 1.2dvh, 14px);
+  line-height: clamp(13px, 1.9dvh, 24px);
+  animation: event-in 200ms ease-out;
+}
+
+.event__user {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40vw;
+}
+
+.event__text {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.event--spawn { border-left-color: #38bdf8; }
+.event--max { border-left-color: #fbbf24; }
+.event--rank { border-left-color: #f472b6; }
+.event--queue { border-left-color: #94a3b8; }
+.event--system { border-left-color: var(--accent); }
+.event--system .event__user { color: var(--accent); }
+
+@keyframes event-in {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ------------------------------------------------------------ 横向き */
+
+/*
+ * 横向きは 9:16 前提の配置が崩れるので、そもそも出しません。
+ * 配信用の画面なので「縦にしてください」と言い切るほうが親切です。
+ */
+.rotate { display: none; }
+
+@media (orientation: landscape) and (max-height: 560px) {
+  .game > *:not(.rotate) { display: none; }
+
+  .rotate {
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 8px;
+    grid-column: 1;
+    grid-row: 1 / -1;
+    height: 100dvh;
+    text-align: center;
+  }
+
+  .rotate__main {
+    font-size: clamp(16px, 5vh, 34px);
+    font-weight: 900;
+    letter-spacing: 0.18em;
+    color: var(--accent);
+  }
+
+  .rotate__sub {
+    font-size: clamp(10px, 2.6vh, 15px);
+    letter-spacing: 0.2em;
+    color: var(--muted);
+  }
+}
