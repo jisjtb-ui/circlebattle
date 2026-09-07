@@ -78,6 +78,12 @@
     this.random = options.random || Math.random;
 
     this.field = { width: this.config.field.width, height: this.config.field.height };
+    /** 何段階広がっているか (0 = 元の大きさ)。 */
+    this.stage = 0;
+    this._stageFrom = this.field.width;
+    this._stageTo = this.field.width;
+    this._stageAt = null;
+    this._stageReadyAt = 0;
     this.enemyTypes = this.config.enemies.types.slice();
 
     this.enemies = [];
@@ -143,6 +149,107 @@
       if (this.enemyTypes[i].id === id) return this.enemyTypes[i];
     }
     return null;
+  };
+
+  // ------------------------------------------------------------- stage
+
+  /** 円と敵が床のどれだけを占めているか (0 〜 1)。 */
+  BattleEngine.prototype.coverage = function () {
+    var area = 0;
+    var i;
+    for (i = 0; i < this.circles.length; i += 1) {
+      area += Math.PI * this.circles[i].radius * this.circles[i].radius;
+    }
+    for (i = 0; i < this.enemies.length; i += 1) {
+      area += Math.PI * this.enemies[i].radius * this.enemies[i].radius;
+    }
+    return area / (this.field.width * this.field.height);
+  };
+
+  /** その段階でのフィールドの広さ。 */
+  BattleEngine.prototype.stageWidth = function (stage) {
+    return this.config.field.width * Math.pow(this.config.field.expand.step, stage);
+  };
+
+  /**
+   * 混み具合を見てフィールドの広さを変える。
+   *
+   * 変化は一瞬ではなく durationMs をかけて進みます。座標も同じ割合で広げるので、
+   * 画面は静かにズームアウト / ズームインし、円の位置関係は変わりません。
+   */
+  BattleEngine.prototype._stageTick = function (now) {
+    var expand = this.config.field.expand;
+    if (!expand || !expand.enabled) return;
+
+    // --- 進行中の変化を進める
+    if (this._stageAt != null) {
+      var t = Math.min(1, (now - this._stageAt) / expand.durationMs);
+      // ゆっくり始まってゆっくり終わる (急に動くと目が追えないため)
+      var eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      this._resizeField(this._stageFrom + (this._stageTo - this._stageFrom) * eased);
+
+      if (t >= 1) {
+        this._stageAt = null;
+        this._stageReadyAt = now + expand.cooldownMs;
+        this.emit('stage:settled', { stage: this.stage, width: this.field.width });
+      }
+      return;
+    }
+
+    if (now < this._stageReadyAt) return;
+
+    // --- 広げる / 戻すの判定
+    var coverage = this.coverage();
+    var next = this.stage;
+    if (coverage > expand.growAt && this.stage < expand.maxSteps) next = this.stage + 1;
+    else if (coverage < expand.shrinkAt && this.stage > 0) next = this.stage - 1;
+    if (next === this.stage) return;
+
+    var growing = next > this.stage;
+    this.stage = next;
+    this._stageFrom = this.field.width;
+    this._stageTo = this.stageWidth(next);
+    this._stageAt = now;
+
+    this.emit('stage:change', {
+      stage: next,
+      growing: growing,
+      from: this._stageFrom,
+      to: this._stageTo,
+      scale: this._stageTo / this.config.field.width,
+      durationMs: expand.durationMs,
+      coverage: coverage,
+      at: now
+    });
+  };
+
+  /**
+   * フィールドの広さを変える。
+   *
+   * 中にいるものの座標も同じ割合で動かします。そうしないと、広げたときに
+   * 全員が元の範囲に固まったままになり、外側に誰も居ない空き地ができます。
+   * 半径と速さは変えないので、広いほど散らばって見えます。
+   */
+  BattleEngine.prototype._resizeField = function (width) {
+    var ratio = width / this.field.width;
+    if (!isFinite(ratio) || ratio === 1) return;
+
+    this.field.width = width;
+    this.field.height = width;
+
+    var i;
+    for (i = 0; i < this.circles.length; i += 1) {
+      this.circles[i].position.x *= ratio;
+      this.circles[i].position.y *= ratio;
+    }
+    for (i = 0; i < this.enemies.length; i += 1) {
+      this.enemies[i].position.x *= ratio;
+      this.enemies[i].position.y *= ratio;
+    }
+    for (i = 0; i < this.items.length; i += 1) {
+      this.items[i].position.x *= ratio;
+      this.items[i].position.y *= ratio;
+    }
   };
 
   /**
@@ -720,6 +827,7 @@
     this._lastUpdate = now;
     if (dt <= 0) return this;
 
+    this._stageTick(now);
     this._spawnTick(now);
     this._itemsTick(now);
     this._moveEnemies(dt, now);
@@ -1196,6 +1304,11 @@
     this.enemies = [];
     this.circles = [];
     this.items = [];
+    this.field.width = this.config.field.width;
+    this.field.height = this.config.field.height;
+    this.stage = 0;
+    this._stageAt = null;
+    this._stageReadyAt = 0;
     this.stats = { defeated: 0, spawned: 0, circlesSpawned: 0, damage: 0, itemsTaken: 0 };
     this._lastUpdate = null;
     this._nextSpawnAt = null;

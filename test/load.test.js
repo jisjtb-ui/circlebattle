@@ -94,8 +94,9 @@ test('100 人でも円が止まらない / 場外に出ない / 敵が埋まら�
 
     engine.circles.forEach((circle) => {
       assert.ok(Math.hypot(circle.velocity.x, circle.velocity.y) > 1, '止まった円がある');
-      assert.ok(circle.position.x >= -1 && circle.position.x <= config.field.width + 1 &&
-                circle.position.y >= -1 && circle.position.y <= config.field.height + 1,
+      // フィールドは混み具合で広がるので、いまの広さと比べます
+      assert.ok(circle.position.x >= -1 && circle.position.x <= engine.field.width + 1 &&
+                circle.position.y >= -1 && circle.position.y <= engine.field.height + 1,
       '円が場外に出た');
     });
 

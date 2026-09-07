@@ -49,6 +49,9 @@
       rankingMetric: $('ranking-metric'),
       rankingEmpty: $('ranking-empty'),
       notice: $('notice'),
+      stageBanner: $('stage-banner'),
+      stageBannerMain: $('stage-banner-main'),
+      stageBannerSub: $('stage-banner-sub'),
       status: $('status'),
       statusText: $('status-text')
     };
@@ -582,6 +585,26 @@
     this._noticeTimer = setTimeout(function () {
       el.hidden = true;
     }, this.config.ui.noticeMs);
+  };
+
+  /**
+   * フィールドが広がった / 戻ったときの告知。
+   *
+   * ズームと同じ時間だけ出して消えます (CSS の stage-pop)。
+   */
+  Renderer.prototype.showStageBanner = function (main, sub, durationMs) {
+    var el = this.el.stageBanner;
+    if (!el) return;
+
+    this.el.stageBannerMain.textContent = main;
+    this.el.stageBannerSub.textContent = sub || '';
+    el.hidden = false;
+    el.classList.remove('stage-banner--in');
+    void el.offsetWidth;                 // アニメーションをやり直させる
+    el.classList.add('stage-banner--in');
+
+    clearTimeout(this._stageTimer);
+    this._stageTimer = setTimeout(function () { el.hidden = true; }, durationMs || 2000);
   };
 
   /** 中継サーバー / 配信の状態表示。 */

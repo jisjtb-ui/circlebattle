@@ -82,6 +82,21 @@
       if (removed.reason === 'burnout') sfx.play('kill', { pitch: 0.7 });
     });
 
+    // フィールドが広がる / 戻る
+    engine.on('stage:change', function (change) {
+      if (change.growing) {
+        renderer.showStageBanner('STAGE EXPANDED',
+          'MORE ROOM \u2013 STAGE ' + (change.stage + 1) + ' \u00d7' + change.scale.toFixed(2),
+          change.durationMs);
+      } else {
+        renderer.showStageBanner('STAGE SHRINKING',
+          change.stage === 0 ? 'BACK TO NORMAL SIZE'
+            : 'STAGE ' + (change.stage + 1) + ' \u00d7' + change.scale.toFixed(2),
+          change.durationMs);
+      }
+      sfx.play('rank');
+    });
+
     engine.on('item:taken', function (taken) {
       sfx.play('item');
       renderer.showNotice('@' + taken.owner.ownerName + ' → ' + taken.item.label);
