@@ -155,17 +155,111 @@
     return prefix + '-' + this._seq;
   };
 
-  /** 端のほうに出す。画面の真ん中に突然現れるより自然に見えます。 */
+  /**
+   * 生まれた円が進む向きを決める。
+   *
+   * 中央へ向けて撃ち出します。壁の反射は速度の x と y の大きさを変えないので、
+   * **最初の向きがそのまま一生の軌道になります**。ここで壁沿いの向きを
+   * 与えてしまうと、その円は二度と真ん中を通りません。
+   */
+  BattleEngine.prototype._launchHeading = function (position) {
+    var motion = this.config.motion;
+    var toCenter = Math.atan2(this.field.height / 2 - position.y,
+                              this.field.width / 2 - position.x);
+    var spread = (1 - motion.aimAtCenter) * Math.PI;
+    var heading = toCenter + (this.random() * 2 - 1) * spread;
+    return this._avoidWallParallel(heading);
+  };
+
+  /** 縦や横にまっすぐな向き (= 壁をなぞる向き) を避ける。 */
+  BattleEngine.prototype._avoidWallParallel = function (heading) {
+    var min = this.config.motion.minWallAngleDeg * Math.PI / 180;
+    var quarter = Math.PI / 2;
+    var nearest = Math.round(heading / quarter);
+    var diff = heading - nearest * quarter;
+    if (Math.abs(diff) < min) heading = nearest * quarter + (diff < 0 ? -min : min);
+    return heading;
+  };
+
+  /**
+   * 壁際に居座っている円を、中央へ向け直す。
+   *
+   * 生まれる向きを中央へ向けても、他の円とぶつかった拍子に壁沿いの向きへ
+   * 変わることがあります。そのときの保険です。すぐには向きを変えず、
+   * 一定時間ずっと壁際にいた円だけを向け直すので、普通に往復している円は
+   * 影響を受けません。
+   */
+  BattleEngine.prototype._recenterTick = function (list, now) {
+    var motion = this.config.motion;
+    if (!(motion.recenterAfterMs > 0)) return;
+
+    for (var i = 0; i < list.length; i += 1) {
+      var entity = list[i];
+      var band = entity.radius * motion.wallBand;
+      var p = entity.position;
+      var nearWall = p.x < band || p.x > this.field.width - band ||
+                     p.y < band || p.y > this.field.height - band;
+
+      if (!nearWall) { entity.wallSince = null; continue; }
+      if (entity.wallSince == null) { entity.wallSince = now; continue; }
+      if (now - entity.wallSince < motion.recenterAfterMs) continue;
+
+      var heading = this._launchHeading(p);
+      entity.velocity.x = Math.cos(heading) * entity.speed;
+      entity.velocity.y = Math.sin(heading) * entity.speed;
+      entity.wallSince = null;
+    }
+  };
+
+  /**
+   * 他の敵と重ならない場所を探して返す。
+   *
+   * 端に大きい敵が居座っていると、そこへ湧いた小さい敵がそのまま
+   * 中に埋まって見えなくなります。数回試して空いている場所を選びます。
+   */
+  BattleEngine.prototype._freeEdgePosition = function (radius) {
+    var best = null;
+    var bestClearance = -Infinity;
+
+    for (var attempt = 0; attempt < 8; attempt += 1) {
+      var pos = this._edgePosition(radius);
+      var clearance = Infinity;
+
+      for (var i = 0; i < this.enemies.length; i += 1) {
+        var enemy = this.enemies[i];
+        var dx = enemy.position.x - pos.x;
+        var dy = enemy.position.y - pos.y;
+        var gap = Math.sqrt(dx * dx + dy * dy) - (enemy.radius + radius);
+        if (gap < clearance) clearance = gap;
+      }
+
+      if (clearance > 0) return pos;                 // 誰とも重ならない場所
+      if (clearance > bestClearance) { bestClearance = clearance; best = pos; }
+    }
+    return best;                                     // 空きが無ければ一番マシな場所
+  };
+
+  /**
+   * 敵が湧く場所。
+   *
+   * 外側から出しますが、**壁の上には置きません**。壁に貼り付いた状態で湧かせると、
+   * 敵は倒されるまでの短い間ずっと端に居ることになり、画面が端に偏ります。
+   * 辺に沿う位置も端 10% を避けるので、角にも固まりません。
+   */
   BattleEngine.prototype._edgePosition = function (radius) {
+    var spawn = this.config.enemies.spawn;
     var w = this.field.width;
     var h = this.field.height;
-    var side = Math.floor(this.random() * 4);
-    var t = this.random();
 
-    if (side === 0) return { x: t * w, y: radius };
-    if (side === 1) return { x: w - radius, y: t * h };
-    if (side === 2) return { x: t * w, y: h - radius };
-    return { x: radius, y: t * h };
+    var inset = Math.max(radius * 1.2, spawn.edgeInset * Math.min(w, h));
+    var depth = inset + this.random() * inset * 0.5;
+    var along = 0.1 + this.random() * 0.8;
+    var side = Math.floor(this.random() * 4);
+
+    if (side === 0) return { x: along * w, y: depth };
+    if (side === 1) return { x: w - depth, y: along * h };
+    if (side === 2) return { x: along * w, y: h - depth };
+    return { x: depth, y: along * h };
   };
 
   /**
@@ -178,8 +272,8 @@
     if (!type) return null;
 
     var now = at != null ? at : this.now();
-    var pos = this._edgePosition(type.radius);
-    var heading = this.random() * Math.PI * 2;
+    var pos = this._freeEdgePosition(type.radius);
+    var heading = this._launchHeading(pos);
 
     var enemy = {
       id: this._id('enemy'),
@@ -234,7 +328,11 @@
     }
 
     var stats = strengthToStats(spec.strength, viewers);
-    var heading = this.random() * Math.PI * 2;
+    var position = {
+      x: spec.x != null ? spec.x : stats.radius + this.random() * (this.field.width - stats.radius * 2),
+      y: spec.y != null ? spec.y : stats.radius + this.random() * (this.field.height - stats.radius * 2)
+    };
+    var heading = this._launchHeading(position);
 
     var circle = {
       id: this._id('circle'),
@@ -253,10 +351,7 @@
       /** 生まれたときの速さ。速度アイテムの上限をここから決めます。 */
       baseSpeed: stats.speed,
       attackIntervalMs: stats.attackIntervalMs,
-      position: {
-        x: spec.x != null ? spec.x : stats.radius + this.random() * (this.field.width - stats.radius * 2),
-        y: spec.y != null ? spec.y : stats.radius + this.random() * (this.field.height - stats.radius * 2)
-      },
+      position: position,
       velocity: { x: Math.cos(heading) * stats.speed, y: Math.sin(heading) * stats.speed },
       kills: 0,
       damage: 0,
@@ -484,6 +579,8 @@
     this._moveCirclesAndFight(dt, now);
     this._collideAll(this.enemies, dt);
     this._collideAll(this.circles, dt);
+    this._recenterTick(this.enemies, now);
+    this._recenterTick(this.circles, now);
     this._cleanup();
 
     this.emit('tick', { at: now, dt: dt });
@@ -768,15 +865,23 @@
     var nx = dx / dist;
     var ny = dy / dist;
 
+    var ma = collision.massFromRadius ? a.radius * a.radius : 1;
+    var mb = collision.massFromRadius ? b.radius * b.radius : 1;
+
     // --- 1. 押し離す
-    var overlap = (min - dist) / 2;
-    var push = Math.min(overlap, collision.separation * dt);
-    a.position.x -= nx * push;
-    a.position.y -= ny * push;
-    b.position.x += nx * push;
-    b.position.y += ny * push;
-    this._contain(a);
-    this._contain(b);
+    //
+    // 動く量は重さで分けます。大きい円はほとんど動かず、小さい円が出ていくので、
+    // ボスの中に雑魚が埋まったままになりません。
+    //
+    // さらに、壁に押し付けられていて動けなかったぶんは相手側へ回します。
+    // これをしないと、角で「押しても壁に戻される」状態になり、重なったまま
+    // 止まってしまいます (角に敵が固まって見える原因)。
+    var overlap = min - dist;
+    var step = Math.min(overlap, Math.max(collision.separation * dt, overlap * collision.separationRatio));
+
+    var shortfall = this._push(a, -nx, -ny, step * (mb / (ma + mb)));
+    shortfall = this._push(b, nx, ny, step * (ma / (ma + mb)) + shortfall);
+    if (shortfall > 0) this._push(a, -nx, -ny, shortfall);
 
     if (!collision.bounce) return true;
 
@@ -786,8 +891,6 @@
     var along = rvx * nx + rvy * ny;
     if (along > 0) return true;          // すでに離れつつある。二重に跳ねさせない。
 
-    var ma = collision.massFromRadius ? a.radius * a.radius : 1;
-    var mb = collision.massFromRadius ? b.radius * b.radius : 1;
     var impulse = -(1 + collision.restitution) * along / (1 / ma + 1 / mb);
 
     a.velocity.x -= impulse * nx / ma;
@@ -800,6 +903,24 @@
       this._restoreSpeed(b);
     }
     return true;
+  };
+
+  /**
+   * 円を (nx, ny) 方向へ distance だけ動かす。
+   * 壁に阻まれて動けなかったぶんを返します (相手側へ回すため)。
+   */
+  BattleEngine.prototype._push = function (entity, nx, ny, distance) {
+    if (!(distance > 0)) return 0;
+
+    var beforeX = entity.position.x;
+    var beforeY = entity.position.y;
+
+    entity.position.x += nx * distance;
+    entity.position.y += ny * distance;
+    this._contain(entity);
+
+    var moved = (entity.position.x - beforeX) * nx + (entity.position.y - beforeY) * ny;
+    return Math.max(0, distance - moved);
   };
 
   /** 向きはそのままに、速さを元に戻す (止まった円を作らない)。 */

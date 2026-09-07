@@ -383,3 +383,110 @@ test('設定で跳ね返りを切れる (押し離すだけに戻る)', () => {
   advance(500, { steps: 30 });
   assert.ok(a.velocity.x > 0, '跳ね返らない設定なのに向きが変わっている');
 });
+
+test('敵は壁の上には湧かない (端をなぞる敵を作らない)', () => {
+  const { engine, config } = setup();
+  for (let i = 0; i < 80; i += 1) {
+    const enemy = engine.spawnEnemy();
+    const { x, y } = enemy.position;
+    const gap = Math.min(x, y, config.field.width - x, config.field.height - y);
+    assert.ok(gap > enemy.radius * 1.2,
+      `${enemy.typeId} が壁から ${gap.toFixed(0)} しか離れていない (半径 ${enemy.radius})`);
+    engine.enemies.length = 0;
+  }
+});
+
+test('生まれた円は中央のほうへ進む', () => {
+  const { engine, config } = setup();
+  const cx = config.field.width / 2;
+  const cy = config.field.height / 2;
+  let inward = 0;
+
+  for (let i = 0; i < 60; i += 1) {
+    const enemy = engine.spawnEnemy();
+    // 中央へのベクトルと進行方向が同じ向きなら内向き
+    const dot = (cx - enemy.position.x) * enemy.velocity.x + (cy - enemy.position.y) * enemy.velocity.y;
+    if (dot > 0) inward += 1;
+    engine.enemies.length = 0;
+  }
+
+  assert.strictEqual(inward, 60, `${60 - inward} 体が中央と逆を向いて生まれた`);
+});
+
+test('壁と平行な向きでは生まれない', () => {
+  const { engine, config } = setup();
+  const min = config.motion.minWallAngleDeg * Math.PI / 180;
+
+  for (let i = 0; i < 80; i += 1) {
+    const enemy = engine.spawnEnemy();
+    const heading = Math.atan2(enemy.velocity.y, enemy.velocity.x);
+    const quarter = Math.PI / 2;
+    const offAxis = Math.abs(heading - Math.round(heading / quarter) * quarter);
+    assert.ok(offAxis >= min - 1e-9,
+      `${(offAxis * 180 / Math.PI).toFixed(1)} 度しか軸から離れていない`);
+    engine.enemies.length = 0;
+  }
+});
+
+test('壁際に居座り続けたら中央へ向け直す', () => {
+  const { engine, advance, config } = setup({
+    config: { enemies: { spawn: { initialCount: 0, minAlive: 0, maxAlive: 0, intervalMs: 10_000_000 } } }
+  });
+
+  const enemy = engine.spawnEnemy('normal');
+  // 壁沿いにまっすぐ進む状態を作る (放っておくと永久に端を往復する)
+  enemy.position.x = enemy.radius;
+  enemy.position.y = 200;
+  enemy.velocity.x = 0;
+  enemy.velocity.y = enemy.speed;
+
+  advance(config.motion.recenterAfterMs + 500, { steps: 120 });
+
+  assert.ok(Math.abs(enemy.velocity.x) > 1, '壁沿いのまま向きが変わっていない');
+  assert.ok(enemy.velocity.x > 0, '中央と逆 (壁の外) を向いている');
+});
+
+test('小さい敵が大きい敵の中に埋まったままにならない', () => {
+  const { engine, advance } = setup({
+    config: { enemies: { spawn: { initialCount: 0, minAlive: 0, maxAlive: 0, intervalMs: 10_000_000 } } }
+  });
+
+  // 角にボス 2 体を置き、その中に雑魚を埋める (報告された見た目そのもの)
+  const bossA = engine.spawnEnemy('boss');
+  const bossB = engine.spawnEnemy('boss');
+  const small = engine.spawnEnemy('normal');
+  bossA.position.x = 80; bossA.position.y = 80;
+  bossB.position.x = 120; bossB.position.y = 120;
+  small.position.x = 100; small.position.y = 100;
+
+  advance(4_000, { steps: 240 });
+
+  [[bossA, bossB], [bossA, small], [bossB, small]].forEach(([a, b]) => {
+    const gap = Math.hypot(a.position.x - b.position.x, a.position.y - b.position.y);
+    assert.ok(gap >= a.radius + b.radius - 1,
+      `${a.typeId} と ${b.typeId} が ${(a.radius + b.radius - gap).toFixed(1)} 重なったまま`);
+  });
+});
+
+test('しばらく回しても敵が端に偏らない', () => {
+  const harness = setup();
+  const { engine, config } = harness;
+  const W = config.field.width;
+  const H = config.field.height;
+  let middle = 0;
+  let samples = 0;
+
+  for (let t = 0; t < 120; t += 1) {
+    harness.advance(1000, { steps: 60, withDemo: true });
+    engine.enemies.forEach((enemy) => {
+      samples += 1;
+      const inMiddle = enemy.position.x > W / 3 && enemy.position.x < W * 2 / 3 &&
+                       enemy.position.y > H / 3 && enemy.position.y < H * 2 / 3;
+      if (inMiddle) middle += 1;
+    });
+  }
+
+  // 面積比だと中央の 3 分の 1 四方は 11%。半分の 5.5% を下回るなら端に偏っている。
+  const share = 100 * middle / samples;
+  assert.ok(share > 5.5, `中央に居た割合が ${share.toFixed(1)}% しかない`);
+});

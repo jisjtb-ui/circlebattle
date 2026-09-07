@@ -83,11 +83,21 @@ test('引き上げ中のデモの円が敵を倒しても、ランキングに�
   run(harness, 20_000, true);
   send({ type: 'like', user: { id: 'real-1', uniqueId: 'realviewer' }, count: 10 });
 
+  // 引き上げ待ちのデモの円に、わざと敵を倒させる
+  const demoCircle = engine.circles.find((c) => c.demo);
+  assert.ok(demoCircle, 'デモの円が残っていない');
+  demoCircle.attack = 99_999;
+
+  const enemy = engine.spawnEnemy('normal');
+  enemy.position.x = demoCircle.position.x;
+  enemy.position.y = demoCircle.position.y;
+
   const killsBefore = engine.stats.defeated;
-  run(harness, 5_000, true);
+  run(harness, 2_000, true);
 
   assert.ok(engine.stats.defeated > killsBefore, '引き上げ中に戦闘が起きていない');
   assert.ok(leaderboard.top().every((r) => !r.demo), 'デモの名前がランキングに戻っている');
+  assert.strictEqual(leaderboard.top()[0].userName, 'realviewer');
 });
 
 test('デモは設定で止められる', () => {
