@@ -19,9 +19,19 @@ test('LIKE / FOLLOW / SHARE / COMMENT をゲームイベントへ翻訳する', 
 
 test('ゲームで使わない種類は落とす', () => {
   const r = router();
-  assert.strictEqual(r.translate({ type: 'member', user: { uniqueId: 'a' } }), null);
   assert.strictEqual(r.translate({ type: 'viewer', viewerCount: 10 }), null);
   assert.strictEqual(r.translate({ type: 'chat', user: { uniqueId: 'a' }, comment: '' }), null);
+  assert.strictEqual(r.translate({ type: 'unknown', user: { uniqueId: 'a' } }), null);
+});
+
+test('入室は JOIN として届く (呼び名が違っても)', () => {
+  const r = router();
+  ['member', 'join', 'enter'].forEach((type) => {
+    const event = r.translate({ type: type, user: { uniqueId: 'a' } });
+    assert.ok(event, type + ' が落ちている');
+    assert.strictEqual(event.type, 'JOIN');
+    assert.strictEqual(event.user.uniqueId, 'a');
+  });
 });
 
 test('LIKE の数が無ければ 1 件として扱う', () => {

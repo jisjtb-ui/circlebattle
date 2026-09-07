@@ -7,7 +7,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { setup, makeConfig } = require('./helpers.js');
-const { strengthFromGift } = require('../js/game.js');
+const { levelsFromGift } = require('../js/game.js');
 
 /** 敵も他のアイテムも邪魔しない、静かなフィールドを作る。 */
 function quiet(overrides = {}) {
@@ -48,7 +48,7 @@ test('拾われないアイテムは時間で消える', () => {
 test('視聴者の円は拾える', () => {
   const { engine, advance } = quiet();
   const item = engine.spawnItem('power');
-  const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', strength: 1 });
+  const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', level: 1 });
   circle.position.x = item.position.x;
   circle.position.y = item.position.y;
 
@@ -73,28 +73,28 @@ test('敵は拾えない (触れても素通りする)', () => {
   assert.strictEqual(enemy.speed, before.speed);
 });
 
-test('POWER は 100 コインギフトと同じ強さにする', () => {
+test('POWER は 100 コインギフトと同じレベルにする', () => {
   const { engine, advance, config } = quiet();
-  const expected = strengthFromGift(100, config.viewers);
+  const expected = Math.min(levelsFromGift(100, config.viewers), config.viewers.levels.max);
 
   const item = engine.spawnItem('power');
-  const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', strength: 1 });
+  const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', level: 1 });
   circle.position.x = item.position.x;
   circle.position.y = item.position.y;
 
   advance(100, { steps: 3 });
 
-  assert.strictEqual(circle.strength, expected);
+  assert.strictEqual(circle.level, expected);
 
   // 100 コインのギフトで出した円と、同じ強さ・同じ攻撃力になる
-  const gifted = engine.spawnCircle({ ownerId: 'u2', ownerName: 'jiro', strength: expected });
+  const gifted = engine.spawnCircle({ ownerId: 'u2', ownerName: 'jiro', level: expected });
   assert.strictEqual(circle.attack, gifted.attack);
   assert.strictEqual(circle.maxHp, gifted.maxHp);
 });
 
 test('SPEED は速くする (元の速さの上限まで)', () => {
   const { engine, advance, config } = quiet();
-  const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', strength: 1 });
+  const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', level: 1 });
   const base = circle.speed;
   const cap = base * config.items.types.find((t) => t.id === 'speed').effect.maxMultiplier;
 
@@ -113,12 +113,12 @@ test('SPEED は速くする (元の速さの上限まで)', () => {
 
 test('拾って弱くなる値は 1 つも無い', () => {
   const { engine, advance, config } = quiet();
-  const watched = ['strength', 'hp', 'maxHp', 'attack', 'radius', 'speed'];
+  const watched = ['level', 'hp', 'maxHp', 'attack', 'radius', 'speed'];
 
   config.items.types.forEach((type) => {
     // 強い円 / 弱い円のどちらで拾っても下がらないこと
-    [1, 20, 200].forEach((strength) => {
-      const circle = engine.spawnCircle({ ownerId: 'u' + strength, ownerName: 'u', strength: strength });
+    [1, 20, 200].forEach((level) => {
+      const circle = engine.spawnCircle({ ownerId: 'u' + level, ownerName: 'u', level: level });
       const before = {};
       watched.forEach((key) => { before[key] = circle[key]; });
 
@@ -129,24 +129,24 @@ test('拾って弱くなる値は 1 つも無い', () => {
 
       watched.forEach((key) => {
         assert.ok(circle[key] >= before[key],
-          `${type.id} を strength ${strength} の円が拾ったら ${key} が ${before[key]} → ${circle[key]} に下がった`);
+          `${type.id} を Lv${level} の円が拾ったら ${key} が ${before[key]} → ${circle[key]} に下がった`);
       });
     });
   });
 });
 
-test('すでに強い円が POWER を拾っても弱くならない (全快はする)', () => {
+test('すでに最大レベルの円が POWER を拾っても弱くならない (全快はする)', () => {
   const { engine, advance } = quiet();
-  const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', strength: 200 });
+  const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', level: 200 });
   circle.hp = 10;
-  const before = { strength: circle.strength, attack: circle.attack, speed: circle.speed };
+  const before = { level: circle.level, attack: circle.attack, speed: circle.speed };
 
   const item = engine.spawnItem('power');
   circle.position.x = item.position.x;
   circle.position.y = item.position.y;
   advance(100, { steps: 3 });
 
-  assert.strictEqual(circle.strength, before.strength);
+  assert.strictEqual(circle.level, before.level);
   assert.strictEqual(circle.attack, before.attack);
   assert.strictEqual(circle.speed, before.speed);
   assert.strictEqual(circle.hp, circle.maxHp, '全快していない');
@@ -158,7 +158,7 @@ test('拾ったことを知らせる (音と通知のため)', () => {
   engine.on('item:taken', (event) => taken.push(event));
 
   const item = engine.spawnItem('power');
-  const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', strength: 1 });
+  const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', level: 1 });
   circle.position.x = item.position.x;
   circle.position.y = item.position.y;
   advance(100, { steps: 3 });
@@ -172,12 +172,12 @@ test('アイテムの種類はあとから足せる', () => {
   const { engine } = quiet();
   engine.addItemType({
     id: 'mega', label: 'MEGA', color: '#fff', weight: 0,
-    effect: { type: 'strength', strength: 500 }
+    effect: { type: 'level', levels: 500 }
   });
 
   const item = engine.spawnItem('mega');
   assert.strictEqual(item.typeId, 'mega');
-  assert.strictEqual(item.effect.strength, 500);
+  assert.strictEqual(item.effect.levels, 500);
 });
 
 test('設定で止められる', () => {

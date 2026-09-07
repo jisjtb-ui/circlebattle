@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { strengthToStats } = require('../js/game.js');
+const { statsForLevel } = require('../js/game.js');
 const { setup, makeConfig } = require('./helpers.js');
 
 test('起動すると敵が置かれている', () => {
@@ -77,7 +77,7 @@ test('視聴者円は敵を攻撃して倒し、貢献度が残る', () => {
   enemy.position.x = 500;
   enemy.position.y = 500;
 
-  const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', strength: 20, sourceEvent: 'GIFT' });
+  const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', level: 20, sourceEvent: 'GIFT' });
   circle.position.x = 500;
   circle.position.y = 500;
 
@@ -94,7 +94,7 @@ test('視聴者円は敵を攻撃して倒し、貢献度が残る', () => {
 test('倒した敵は消え、その後も新しい敵が出続ける', () => {
   const { engine, advance } = setup();
   for (let i = 0; i < 30; i += 1) {
-    engine.spawnCircle({ ownerId: 'u' + i, ownerName: 'u' + i, strength: 30 });
+    engine.spawnCircle({ ownerId: 'u' + i, ownerName: 'u' + i, level: 30 });
   }
   advance(30_000, { steps: 900 });
 
@@ -105,7 +105,7 @@ test('倒した敵は消え、その後も新しい敵が出続ける', () => {
 test('1 人が持てる円の数には上限がある', () => {
   const { engine } = setup({ config: { viewers: { limits: { maxPerUser: 3 } } } });
   for (let i = 0; i < 10; i += 1) {
-    engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', strength: 1 });
+    engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', level: 1 });
   }
   assert.strictEqual(engine.circles.filter((c) => c.ownerId === 'u1').length, 3);
 });
@@ -113,7 +113,7 @@ test('1 人が持てる円の数には上限がある', () => {
 test('フィールド全体の円の数にも上限がある', () => {
   const { engine } = setup({ config: { viewers: { limits: { maxCircles: 5, maxPerUser: 100 } } } });
   for (let i = 0; i < 20; i += 1) {
-    engine.spawnCircle({ ownerId: 'u' + i, ownerName: 'u' + i, strength: 1 });
+    engine.spawnCircle({ ownerId: 'u' + i, ownerName: 'u' + i, level: 1 });
   }
   assert.strictEqual(engine.circles.length, 5);
 });
@@ -122,10 +122,10 @@ test('円の情報が仕様どおり揃っている', () => {
   const { engine } = setup();
   const circle = engine.spawnCircle({
     ownerId: 'u1', ownerName: 'taro', profileImageUrl: 'https://x/a.webp',
-    sourceEvent: 'GIFT', strength: 5
+    sourceEvent: 'GIFT', level: 5
   });
 
-  ['id', 'ownerId', 'ownerName', 'profileImageUrl', 'sourceEvent', 'strength',
+  ['id', 'ownerId', 'ownerName', 'profileImageUrl', 'sourceEvent', 'level',
     'hp', 'attack', 'radius', 'speed', 'position', 'velocity', 'kills', 'damage']
     .forEach((key) => assert.ok(circle[key] !== undefined, `${key} がない`));
 
@@ -133,16 +133,16 @@ test('円の情報が仕様どおり揃っている', () => {
   assert.strictEqual(typeof circle.velocity.y, 'number');
 });
 
-test('強さが上がると HP も攻撃力も上がる (上限あり)', () => {
+test('レベルが上がると HP も攻撃力も上がる (上限あり)', () => {
   const viewers = makeConfig().viewers;
-  const weak = strengthToStats(1, viewers);
-  const strong = strengthToStats(20, viewers);
-  const huge = strengthToStats(100_000, viewers);
+  const weak = statsForLevel(1, viewers);
+  const strong = statsForLevel(20, viewers);
+  const huge = statsForLevel(100_000, viewers);
 
   assert.ok(strong.hp > weak.hp && strong.attack > weak.attack);
   assert.ok(strong.radius > weak.radius);
   assert.ok(huge.radius <= viewers.scaling.maxRadius);
-  assert.strictEqual(huge.strength, viewers.scaling.maxStrength);
+  assert.strictEqual(huge.level, viewers.levels.max, 'レベルの上限を超えている');
   assert.ok(huge.speed >= viewers.scaling.minSpeed);
 });
 
@@ -182,12 +182,12 @@ test('視聴者が増えると敵も増える (上限は守る)', () => {
   assert.strictEqual(engine.targetAlive(), config.enemies.spawn.minAlive);
 
   for (let i = 0; i < step * 4; i += 1) {
-    engine.spawnCircle({ ownerId: 'u' + i, ownerName: 'u' + i, strength: 1 });
+    engine.spawnCircle({ ownerId: 'u' + i, ownerName: 'u' + i, level: 1 });
   }
   assert.strictEqual(engine.targetAlive(), config.enemies.spawn.minAlive + 4);
 
   for (let i = 0; i < config.viewers.limits.maxCircles; i += 1) {
-    engine.spawnCircle({ ownerId: 'x' + i, ownerName: 'x' + i, strength: 1 });
+    engine.spawnCircle({ ownerId: 'x' + i, ownerName: 'x' + i, level: 1 });
   }
   assert.strictEqual(engine.targetAlive(), config.enemies.spawn.maxAlive);
 });
@@ -214,7 +214,7 @@ test('視聴者円も等速直線運動をする (敵を追いかけない)', ()
   const { engine, advance } = setup({
     config: { enemies: { spawn: { initialCount: 0, minAlive: 0, maxAlive: 0, intervalMs: 10_000_000 } } }
   });
-  const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', strength: 1 });
+  const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', level: 1 });
   circle.position.x = 300;
   circle.position.y = 500;
   circle.velocity.x = circle.speed;
@@ -257,7 +257,7 @@ test('設定を戻せば追いかける動きにもできる', () => {
       enemies: { spawn: { initialCount: 0, minAlive: 0, maxAlive: 0, intervalMs: 10_000_000 } }
     }
   });
-  const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', strength: 1 });
+  const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', level: 1 });
   circle.position.x = 300;
   circle.position.y = 500;
 
@@ -284,8 +284,8 @@ test('円同士はぶつかると跳ね返る', () => {
   });
 
   // 正面衝突させる
-  const a = engine.spawnCircle({ ownerId: 'a', ownerName: 'a', strength: 1 });
-  const b = engine.spawnCircle({ ownerId: 'b', ownerName: 'b', strength: 1 });
+  const a = engine.spawnCircle({ ownerId: 'a', ownerName: 'a', level: 1 });
+  const b = engine.spawnCircle({ ownerId: 'b', ownerName: 'b', level: 1 });
   a.position.x = 460; a.position.y = 500; a.velocity.x = a.speed;  a.velocity.y = 0;
   b.position.x = 540; b.position.y = 500; b.velocity.x = -b.speed; b.velocity.y = 0;
 
@@ -301,8 +301,8 @@ test('跳ね返っても速さは変わらない (等速のまま)', () => {
     config: { enemies: { spawn: { initialCount: 0, minAlive: 0, maxAlive: 0, intervalMs: 10_000_000 } } }
   });
 
-  const a = engine.spawnCircle({ ownerId: 'a', ownerName: 'a', strength: 1 });
-  const b = engine.spawnCircle({ ownerId: 'b', ownerName: 'b', strength: 1 });
+  const a = engine.spawnCircle({ ownerId: 'a', ownerName: 'a', level: 1 });
+  const b = engine.spawnCircle({ ownerId: 'b', ownerName: 'b', level: 1 });
   // 斜めにぶつける (真正面より速さが変わりやすい当たり方)
   a.position.x = 470; a.position.y = 480; a.velocity.x = a.speed; a.velocity.y = 0;
   b.position.x = 530; b.position.y = 500; b.velocity.x = 0; b.velocity.y = -b.speed;
@@ -321,8 +321,8 @@ test('大きい円ほど押し勝つ (小さい円だけが跳ね返る)', () =>
     config: { enemies: { spawn: { initialCount: 0, minAlive: 0, maxAlive: 0, intervalMs: 10_000_000 } } }
   });
 
-  const small = engine.spawnCircle({ ownerId: 'a', ownerName: 'a', strength: 1 });
-  const big = engine.spawnCircle({ ownerId: 'b', ownerName: 'b', strength: 60 });
+  const small = engine.spawnCircle({ ownerId: 'a', ownerName: 'a', level: 1 });
+  const big = engine.spawnCircle({ ownerId: 'b', ownerName: 'b', level: 60 });
   small.position.x = 460; small.position.y = 500; small.velocity.x = small.speed; small.velocity.y = 0;
   big.position.x = 560; big.position.y = 500; big.velocity.x = 0; big.velocity.y = 0;
   const bigHeadingBefore = { x: big.velocity.x, y: big.velocity.y };
@@ -342,7 +342,7 @@ test('円が敵にぶつかっても跳ね返る', () => {
   const enemy = engine.spawnEnemy('boss');
   enemy.position.x = 560; enemy.position.y = 500; enemy.velocity.x = 0; enemy.velocity.y = 0;
 
-  const circle = engine.spawnCircle({ ownerId: 'a', ownerName: 'a', strength: 1 });
+  const circle = engine.spawnCircle({ ownerId: 'a', ownerName: 'a', level: 1 });
   circle.position.x = 420; circle.position.y = 500; circle.velocity.x = circle.speed; circle.velocity.y = 0;
 
   advance(1_500, { steps: 90 });
@@ -352,9 +352,10 @@ test('円が敵にぶつかっても跳ね返る', () => {
 });
 
 test('円を大量に置いても 1 フレームの計算が跳ね上がらない', () => {
+  // 1 人あたりの上限に当たらないよう、400 人ぶんの円を置く
   const { engine, advance } = setup();
   for (let i = 0; i < 400; i += 1) {
-    engine.spawnCircle({ ownerId: 'u' + (i % 20), ownerName: 'u' + (i % 20), strength: 1 });
+    engine.spawnCircle({ ownerId: 'u' + i, ownerName: 'u' + i, level: 1 });
   }
   assert.strictEqual(engine.circles.length, 400, '上限で消えている');
 
@@ -375,8 +376,8 @@ test('設定で跳ね返りを切れる (押し離すだけに戻る)', () => {
     }
   });
 
-  const a = engine.spawnCircle({ ownerId: 'a', ownerName: 'a', strength: 1 });
-  const b = engine.spawnCircle({ ownerId: 'b', ownerName: 'b', strength: 1 });
+  const a = engine.spawnCircle({ ownerId: 'a', ownerName: 'a', level: 1 });
+  const b = engine.spawnCircle({ ownerId: 'b', ownerName: 'b', level: 1 });
   a.position.x = 470; a.position.y = 500; a.velocity.x = a.speed; a.velocity.y = 0;
   b.position.x = 530; b.position.y = 500; b.velocity.x = a.speed; b.velocity.y = 0;
 
@@ -489,4 +490,31 @@ test('しばらく回しても敵が端に偏らない', () => {
   // 面積比だと中央の 3 分の 1 四方は 11%。半分の 5.5% を下回るなら端に偏っている。
   const share = 100 * middle / samples;
   assert.ok(share > 5.5, `中央に居た割合が ${share.toFixed(1)}% しかない`);
+});
+
+test('場が育つと敵も硬くなる (撃破ポイントは変わらない)', () => {
+  const { engine, config } = setup();
+
+  assert.ok(Math.abs(engine.enemyHpMultiplier() - 1) < 0.01, '誰も居ないのに敵が硬い');
+  const plain = engine.spawnEnemy('normal');
+  assert.strictEqual(plain.maxHp, config.enemies.types[0].hp);
+
+  // 最大レベルの円を並べる
+  for (let i = 0; i < 30; i += 1) {
+    engine.spawnCircle({ ownerId: 'u' + i, ownerName: 'u' + i, level: config.viewers.levels.max });
+  }
+
+  assert.ok(engine.enemyHpMultiplier() > 2, '場が育っても敵が硬くならない');
+  const tough = engine.spawnEnemy('normal');
+  assert.ok(tough.maxHp > plain.maxHp * 2, '敵の HP が上がっていない');
+  assert.strictEqual(tough.points, plain.points, '撃破ポイントまで変わっている');
+  assert.strictEqual(tough.attack, plain.attack, '敵の攻撃力まで上がっている');
+});
+
+test('敵の HP 倍率には上限がある', () => {
+  const { engine, config } = setup();
+  for (let i = 0; i < 400; i += 1) {
+    engine.spawnCircle({ ownerId: 'u' + i, ownerName: 'u' + i, level: config.viewers.levels.max });
+  }
+  assert.strictEqual(engine.enemyHpMultiplier(), config.enemies.scale.maxHpMultiplier);
 });

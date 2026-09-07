@@ -6,7 +6,7 @@
  * このファイルは TikTok を知りません。知っているのは
  * 「円を出してくれ」「時間が進んだ」の 2 つだけです。
  *
- *   engine.spawnCircle({ ownerId, ownerName, strength, ... });
+ *   engine.spawnCircle({ ownerId, ownerName, level, ... });
  *   engine.update(nowMs);
  *
  * 得点の配り方もランキングも持ちません。敵が倒れたら
@@ -19,42 +19,51 @@
   'use strict';
 
   /**
-   * 強さ (strength) から円の各値を出す。
+   * レベルから円の各値を出す。
    *
-   *   value = base * strength ^ exp
+   *   value = base * level ^ exp
    *
-   * LIKE も FOLLOW も GIFT も、違うのは strength の数字だけです。
-   * 新しいイベントで円を出したくなったら strength を決めるだけで済みます。
+   * LIKE も FOLLOW も GIFT も、違うのは「何レベル上がるか」だけです。
+   * 円の強さはレベルだけで決まるので、育て方が変わっても
+   * ここから先を触る必要はありません。
    *
-   * @param {number} strength
+   * @param {number} level    1 〜 levels.max
    * @param {object} viewers  CONFIG.viewers
    */
-  function strengthToStats(strength, viewers) {
+  function statsForLevel(level, viewers) {
     var scaling = viewers.scaling;
-    var s = Math.max(1, Math.min(Number(strength) || 1, scaling.maxStrength));
+    var lv = clampLevel(level, viewers);
     var base = viewers.base;
 
     return {
-      strength: s,
-      hp: Math.round(base.hp * Math.pow(s, scaling.hpExp)),
-      attack: Math.round(base.attack * Math.pow(s, scaling.attackExp)),
-      radius: Math.min(base.radius * Math.pow(s, scaling.radiusExp), scaling.maxRadius),
-      speed: Math.max(base.speed * Math.pow(s, scaling.speedExp), scaling.minSpeed),
+      level: lv,
+      hp: Math.round(base.hp * Math.pow(lv, scaling.hpExp)),
+      attack: Math.round(base.attack * Math.pow(lv, scaling.attackExp)),
+      radius: Math.min(base.radius * Math.pow(lv, scaling.radiusExp), scaling.maxRadius),
+      speed: Math.max(base.speed * Math.pow(lv, scaling.speedExp), scaling.minSpeed),
       attackIntervalMs: base.attackIntervalMs
     };
   }
 
+  /** 1 〜 上限に収める。 */
+  function clampLevel(level, viewers) {
+    var max = viewers.levels.max;
+    var lv = Math.floor(Number(level) || 1);
+    return Math.max(1, Math.min(lv, max));
+  }
+
   /**
-   * ギフトのコイン価値 -> 円の強さ。
+   * ギフトのコイン価値 -> 上がるレベル。
    *
-   *   strength = baseStrength + coins * strengthPerCoin
+   *   levels = coins * giftLevelsPerCoin
    *
    * GIFT イベントからも、アイテム (「100 コインギフト相当」) からも
    * ここを通します。式が 2 箇所にあると、片方だけ変えたときにずれるためです。
    */
-  function strengthFromGift(coins, viewers) {
-    var gift = viewers.gift;
-    return gift.baseStrength + Math.max(0, Number(coins) || 0) * gift.strengthPerCoin;
+  function levelsFromGift(coins, viewers) {
+    var levels = viewers.levels;
+    var value = Math.max(0, Number(coins) || 0) * levels.giftLevelsPerCoin;
+    return Math.max(levels.giftMinLevels, Math.ceil(value));
   }
 
   /**
@@ -92,12 +101,17 @@
     this._listeners = {};
   }
 
-  BattleEngine.strengthToStats = strengthToStats;
-  BattleEngine.strengthFromGift = strengthFromGift;
+  BattleEngine.statsForLevel = statsForLevel;
+  BattleEngine.levelsFromGift = levelsFromGift;
 
-  /** ギフトのコイン価値 -> 強さ。GIFT イベントもアイテムもここを通します。 */
-  BattleEngine.prototype.strengthFromGift = function (coins) {
-    return strengthFromGift(coins, this.config.viewers);
+  /** ギフトのコイン価値 -> 上がるレベル。GIFT もアイテムもここを通します。 */
+  BattleEngine.prototype.levelsFromGift = function (coins) {
+    return levelsFromGift(coins, this.config.viewers);
+  };
+
+  /** レベルの上限。 */
+  BattleEngine.prototype.maxLevel = function () {
+    return this.config.viewers.levels.max;
   };
 
   // ------------------------------------------------------------- events
@@ -129,6 +143,22 @@
       if (this.enemyTypes[i].id === id) return this.enemyTypes[i];
     }
     return null;
+  };
+
+  /**
+   * 敵の HP 倍率。
+   *
+   * フィールドにいる視聴者円の合計レベルから決めます。誰も育っていなければ 1 倍、
+   * 育った円が並ぶほど硬くなります。撃破ポイントは変わらないので、
+   * 強い人がいるほど 1 体あたりの価値が上がるわけではありません。
+   */
+  BattleEngine.prototype.enemyHpMultiplier = function () {
+    var scale = this.config.enemies.scale;
+    if (!scale || !(scale.hpPerTotalLevel > 0)) return 1;
+
+    var total = 0;
+    for (var i = 0; i < this.circles.length; i += 1) total += this.circles[i].level;
+    return Math.min(1 + total / scale.hpPerTotalLevel, scale.maxHpMultiplier);
   };
 
   /** weight に比例した抽選。 */
@@ -282,14 +312,15 @@
     // 置ける場所が無いほど混んでいる。次の間隔まで待ちます。
     if (!pos) return null;
     var heading = this._launchHeading(pos);
+    var hp = Math.round(type.hp * this.enemyHpMultiplier());
 
     var enemy = {
       id: this._id('enemy'),
       typeId: type.id,
       label: type.label || type.id,
       color: type.color,
-      hp: type.hp,
-      maxHp: type.hp,
+      hp: hp,
+      maxHp: hp,
       radius: type.radius,
       speed: type.speed,
       attack: type.attack,
@@ -317,7 +348,7 @@
    * 視聴者の円を 1 つ出す。
    *
    * @param {object} spec
-   *   ownerId, ownerName, displayName, profileImageUrl, sourceEvent, strength, demo
+   *   ownerId, ownerName, displayName, profileImageUrl, sourceEvent, level, demo
    */
   BattleEngine.prototype.spawnCircle = function (spec, at) {
     var viewers = this.config.viewers;
@@ -335,7 +366,7 @@
       this._removeCircle(this.circles[0], 'evicted');
     }
 
-    var stats = strengthToStats(spec.strength, viewers);
+    var stats = statsForLevel(spec.level != null ? spec.level : 1, viewers);
     var position = {
       x: spec.x != null ? spec.x : stats.radius + this.random() * (this.field.width - stats.radius * 2),
       y: spec.y != null ? spec.y : stats.radius + this.random() * (this.field.height - stats.radius * 2)
@@ -348,9 +379,10 @@
       ownerName: spec.ownerName || ownerId,
       displayName: spec.displayName || spec.ownerName || ownerId,
       profileImageUrl: spec.profileImageUrl || null,
-      /** 'LIKE' | 'FOLLOW' | 'SHARE' | 'GIFT' | ... どのイベントで生まれたか。 */
+      /** 'LIKE' | 'FOLLOW' | 'SHARE' | 'GIFT' | 'JOIN' | ... どのイベントで生まれたか。 */
       sourceEvent: spec.sourceEvent || null,
-      strength: stats.strength,
+      /** 1 〜 100。育つほど強く、大きくなります。 */
+      level: stats.level,
       hp: stats.hp,
       maxHp: stats.hp,
       attack: stats.attack,
@@ -489,18 +521,18 @@
     var viewers = this.config.viewers;
     var effect = item.effect || {};
     var before = {
-      strength: circle.strength, hp: circle.hp, maxHp: circle.maxHp,
+      level: circle.level, hp: circle.hp, maxHp: circle.maxHp,
       attack: circle.attack, radius: circle.radius, speed: circle.speed
     };
 
-    if (effect.type === 'strength') {
-      // 「100 コインギフト相当の強さ」。ギフトと同じ式を通します。
-      var strength = effect.strength != null
-        ? effect.strength
-        : strengthFromGift(effect.giftCoins, viewers);
+    if (effect.type === 'level') {
+      // 「100 コインギフト相当のレベル」。ギフトと同じ式を通します。
+      var levels = effect.levels != null
+        ? effect.levels
+        : levelsFromGift(effect.giftCoins, viewers);
 
-      var stats = strengthToStats(Math.max(circle.strength, strength), viewers);
-      circle.strength = Math.max(circle.strength, stats.strength);
+      var stats = statsForLevel(Math.max(circle.level, clampLevel(levels, viewers)), viewers);
+      circle.level = Math.max(circle.level, stats.level);
       circle.maxHp = Math.max(circle.maxHp, stats.hp);
       circle.attack = Math.max(circle.attack, stats.attack);
       circle.radius = Math.max(circle.radius, stats.radius);
@@ -539,6 +571,48 @@
       this.items.splice(i, 1);
       this._applyItem(circle, item, now);
     }
+  };
+
+  /**
+   * 円を育てる。
+   *
+   * 新しい円を出すのではなく、その人が今持っている円のレベルを上げます。
+   * 上限に達している円は育ちません (呼び出し側が新しい円を作ります)。
+   *
+   * 増えたぶんの HP はそのまま回復します。育てたのに打たれ弱くなる、
+   * という損をしないためです。
+   *
+   * @returns {number} 実際に上がったレベル数 (0 なら上限で上がらなかった)
+   */
+  BattleEngine.prototype.levelUp = function (circle, levels, at) {
+    var viewers = this.config.viewers;
+    var max = viewers.levels.max;
+    if (circle.level >= max) return 0;
+
+    var before = circle.level;
+    var stats = statsForLevel(circle.level + Math.max(0, Math.floor(levels)), viewers);
+    var gainedHp = stats.hp - circle.maxHp;
+
+    circle.level = stats.level;
+    circle.maxHp = stats.hp;
+    circle.hp = Math.min(circle.maxHp, circle.hp + Math.max(0, gainedHp));
+    circle.attack = stats.attack;
+    circle.radius = stats.radius;
+    circle.speed = stats.speed;
+    circle.leveledAt = at != null ? at : this.now();
+    this._restoreSpeed(circle);
+
+    this.emit('circle:levelup', { circle: circle, from: before, to: circle.level, at: circle.leveledAt });
+    return circle.level - before;
+  };
+
+  /** その人がいま育てている円 (最新の 1 つ)。 */
+  BattleEngine.prototype.circleOf = function (ownerId, id) {
+    for (var i = this.circles.length - 1; i >= 0; i -= 1) {
+      var circle = this.circles[i];
+      if (circle.ownerId === ownerId && (!id || circle.id === id)) return circle;
+    }
+    return null;
   };
 
   BattleEngine.prototype._removeCircle = function (circle, reason) {
@@ -1066,14 +1140,14 @@
 
   global.CB = global.CB || {};
   global.CB.BattleEngine = BattleEngine;
-  global.CB.strengthToStats = strengthToStats;
-  global.CB.strengthFromGift = strengthFromGift;
+  global.CB.statsForLevel = statsForLevel;
+  global.CB.levelsFromGift = levelsFromGift;
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
       BattleEngine: BattleEngine,
-      strengthToStats: strengthToStats,
-      strengthFromGift: strengthFromGift
+      statsForLevel: statsForLevel,
+      levelsFromGift: levelsFromGift
     };
   }
 })(typeof window !== 'undefined' ? window : this);

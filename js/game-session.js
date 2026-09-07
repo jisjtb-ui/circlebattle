@@ -28,12 +28,14 @@
     this.now = options.now || function () { return Date.now(); };
     this.liveId = options.liveId || 'live-1';
 
-    /** userId -> まだ円になっていない LIKE の端数。 */
+    /** userId -> まだレベルになっていない LIKE の端数。 */
     this.likeBuckets = {};
+    /** userId -> { circleId, joined } いま育てている円と、入室ボーナスを渡したか。 */
+    this.players = {};
     /** 本物の視聴者イベントを受け取ったか (デモを止める判断に使う)。 */
     this.realEventSeen = false;
 
-    this.stats = { likes: 0, follows: 0, shares: 0, gifts: 0, comments: 0, circles: 0 };
+    this.stats = { likes: 0, follows: 0, shares: 0, gifts: 0, joins: 0, comments: 0, circles: 0 };
     this._listeners = {};
 
     this._wireEngine();
@@ -153,40 +155,79 @@
     this.emit('kill', kill);
   };
 
-  // ------------------------------------------------------------- 円を出す
+  // ------------------------------------------------------------ レベル
+
+  GameSession.prototype._player = function (userId) {
+    return this.players[userId] || (this.players[userId] = { circleId: null, joined: false });
+  };
 
   /**
-   * 円を出す共通の入口。
-   * イベントごとの違いは「何個」「どれだけの強さ」だけです。
+   * レベルを上げる。ここがこのゲームの中心です。
+   *
+   *   1. その人がいま育てている円があれば、その円を育てる
+   *   2. 無ければ (まだ 1 つも無い / 力尽きた) 新しい円を作る
+   *   3. 上限 (100) の円しか無ければ、その円はそのままにして新しい円を作る
+   *
+   * 3 の新しい円は「その行動ぶんのレベル」で生まれます。
+   * 10 LIKE なら 1 レベル、50 コインのギフトなら 50 レベルです。
+   *
+   * @returns {object|null} 育てた / 作った円
    */
-  GameSession.prototype.spawnFor = function (user, spec) {
-    var count = Math.max(0, Math.floor(spec.count));
-    if (!count) return [];
+  GameSession.prototype.gainLevels = function (user, levels, sourceEvent, at) {
+    var gained = Math.max(0, Math.floor(levels));
+    if (!gained) return null;
 
-    var created = [];
-    for (var i = 0; i < count; i += 1) {
-      created.push(this.engine.spawnCircle({
-        ownerId: user.id,
-        ownerName: user.uniqueId,
-        displayName: user.displayName,
-        profileImageUrl: user.profileImageUrl,
-        sourceEvent: spec.sourceEvent,
-        strength: spec.strength,
-        demo: Boolean(user.demo)
-      }, spec.at));
+    var player = this._player(user.id);
+    var circle = player.circleId ? this.engine.circleOf(user.id, player.circleId) : null;
+    var max = this.config.viewers.levels.max;
+
+    if (circle && circle.level < max) {
+      var before = circle.level;
+      this.engine.levelUp(circle, gained, at);
+      if (this.leaderboard) this.leaderboard.setLevel(user, circle.level, at);
+      this.emit('levelup', {
+        user: user, circle: circle, from: before, to: circle.level,
+        sourceEvent: sourceEvent, at: at
+      });
+      return circle;
     }
 
-    this.stats.circles += created.length;
-    if (this.leaderboard) this.leaderboard.touch(user, spec.at);
+    // 円が無い / 上限に達している -> 新しい円を作る
+    return this.spawnFor(user, {
+      level: this.config.viewers.levels.restartAtActionLevel ? gained : 1,
+      sourceEvent: sourceEvent,
+      at: at
+    });
+  };
+
+  /**
+   * 新しい円を 1 つ作って、その人の「育てている円」にする。
+   */
+  GameSession.prototype.spawnFor = function (user, spec) {
+    var circle = this.engine.spawnCircle({
+      ownerId: user.id,
+      ownerName: user.uniqueId,
+      displayName: user.displayName,
+      profileImageUrl: user.profileImageUrl,
+      sourceEvent: spec.sourceEvent,
+      level: spec.level,
+      demo: Boolean(user.demo)
+    }, spec.at);
+
+    this._player(user.id).circleId = circle.id;
+    this.stats.circles += 1;
+
+    if (this.leaderboard) this.leaderboard.setLevel(user, circle.level, spec.at);
 
     this.emit('spawn', {
       user: user,
       sourceEvent: spec.sourceEvent,
-      count: created.length,
-      strength: spec.strength,
-      circles: created
+      count: 1,
+      level: circle.level,
+      circle: circle,
+      circles: [circle]
     });
-    return created;
+    return circle;
   };
 
   // ------------------------------------------------------------ handle
@@ -212,81 +253,72 @@
       case 'FOLLOW': return this._onFollow(user, event, at);
       case 'SHARE':  return this._onShare(user, event, at);
       case 'GIFT':   return this._onGift(user, event, at);
+      case 'JOIN':   return this._onJoin(user, event, at);
       case 'COMMENT': return this._onComment(user, event, at);
       default: return null;
     }
   };
 
   /**
-   * LIKE: 10 LIKE ごとに弱い円が 1 個。
+   * LIKE: 10 いいねで 1 レベル。
    *
-   * 端数はユーザーごとに持ち越します。7 LIKE + 5 LIKE = 12 で 1 個出て、
-   * 2 が次へ残ります。「まとめて 100 LIKE」なら 10 個まとめて出ます。
+   * 端数はユーザーごとに持ち越します。7 + 5 = 12 で 1 レベル上がり、
+   * 2 が次へ残ります。「まとめて 100 LIKE」なら一度に 10 レベルです。
    */
   GameSession.prototype._onLike = function (user, event, at) {
-    var like = this.config.viewers.like;
+    var levels = this.config.viewers.levels;
     var count = Math.max(1, Math.floor(event.count || 1));
     this.stats.likes += count;
 
     var bucket = (this.likeBuckets[user.id] || 0) + count;
-    var milestones = Math.floor(bucket / like.perCircle);
-    this.likeBuckets[user.id] = bucket - milestones * like.perCircle;
+    var gained = Math.floor(bucket / levels.likesPerLevel);
+    this.likeBuckets[user.id] = bucket - gained * levels.likesPerLevel;
 
-    var circles = Math.min(milestones * like.circlesPerMilestone, like.maxPerEvent);
     if (this.leaderboard) this.leaderboard.touch(user, at);
-    if (!circles) return [];
+    if (!gained) return null;
 
-    return this.spawnFor(user, {
-      count: circles,
-      strength: like.strength,
-      sourceEvent: 'LIKE',
-      at: at
-    });
+    return this.gainLevels(user, gained, 'LIKE', at);
   };
 
   GameSession.prototype._onFollow = function (user, event, at) {
-    var follow = this.config.viewers.follow;
     this.stats.follows += 1;
-    return this.spawnFor(user, {
-      count: follow.circles,
-      strength: follow.strength,
-      sourceEvent: 'FOLLOW',
-      at: at
-    });
+    return this.gainLevels(user, this.config.viewers.levels.follow, 'FOLLOW', at);
   };
 
   GameSession.prototype._onShare = function (user, event, at) {
-    var share = this.config.viewers.share;
     this.stats.shares += 1;
-    return this.spawnFor(user, {
-      count: share.circles,
-      strength: share.strength,
-      sourceEvent: 'SHARE',
-      at: at
-    });
+    return this.gainLevels(user, this.config.viewers.levels.share, 'SHARE', at);
   };
 
   /**
-   * GIFT: コイン価値 -> 強さ。
-   *
-   *   strength = baseStrength + coins * strengthPerCoin
+   * GIFT: コイン価値 -> レベル。
    *
    * ギフトの名前も ID も見ません。価値の数字だけを見るので、
    * 新しいギフトが増えても何もしなくて済みます。
    */
   GameSession.prototype._onGift = function (user, event, at) {
-    var gift = this.config.viewers.gift;
-    var coins = Math.max(0, Number(event.value) || 0);
     this.stats.gifts += 1;
+    var levels = this.engine.levelsFromGift(event.value);
+    return this.gainLevels(user, levels, 'GIFT', at);
+  };
 
-    // 換算式は game.js に 1 つだけ置いてあります (アイテムからも同じ式を使うため)
-    var strength = this.engine.strengthFromGift(coins);
-    return this.spawnFor(user, {
-      count: gift.circles,
-      strength: strength,
-      sourceEvent: 'GIFT',
-      at: at
-    });
+  /**
+   * JOIN (入室): 最初の 1 回だけ、レベル 20 の円をもらえます。
+   *
+   * 2 回目以降は何も起きません。入り直すだけで何度ももらえると、
+   * 見ている人より出入りした人が得をしてしまうためです。
+   */
+  GameSession.prototype._onJoin = function (user, event, at) {
+    var levels = this.config.viewers.levels;
+    var player = this._player(user.id);
+
+    this.stats.joins += 1;
+    if (this.leaderboard) this.leaderboard.touch(user, at);
+
+    if (levels.joinOncePerUser && player.joined) return null;
+    player.joined = true;
+
+    return this.spawnFor(user, { level: levels.join, sourceEvent: 'JOIN', at: at });
   };
 
   /**
@@ -303,9 +335,10 @@
     return null;
   };
 
-  /** LIKE の端数だけを消す (次の配信を始めるときなど)。 */
+  /** LIKE の端数と、誰がどの円を育てているかを消す (次の配信を始めるときなど)。 */
   GameSession.prototype.reset = function () {
     this.likeBuckets = {};
+    this.players = {};
     this.realEventSeen = false;
     return this;
   };

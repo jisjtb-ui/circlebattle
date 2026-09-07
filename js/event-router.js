@@ -24,6 +24,8 @@
     LIKE: 'LIKE',
     FOLLOW: 'FOLLOW',
     SHARE: 'SHARE',
+    /** 入室。1 人 1 回だけ、レベル 20 の円がもらえます。 */
+    JOIN: 'JOIN',
     /** 今回のゲームでは何も起こしません。将来の操作用に通すだけです。 */
     COMMENT: 'COMMENT'
   };
@@ -201,7 +203,7 @@
 
   /**
    * 翻訳だけを行う (セッションへは渡さない)。テストから直接叩けます。
-   * ゲームで使わない種類 (member / viewer など) は null を返します。
+   * ゲームで使わない種類 (viewer など) は null を返します。
    */
   EventRouter.prototype.translate = function (raw) {
     var type = String(raw.type || raw.event || '').toLowerCase();
@@ -232,6 +234,12 @@
 
       case 'share':
         return { type: GAME_EVENT.SHARE, user: readUser(raw), at: at };
+
+      // 入室。ライブラリによって member / join / enter と名前が揺れます。
+      case 'member':
+      case 'join':
+      case 'enter':
+        return { type: GAME_EVENT.JOIN, user: readUser(raw), at: at };
 
       case 'chat':
       case 'comment': {

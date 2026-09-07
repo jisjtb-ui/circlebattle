@@ -7,6 +7,8 @@
  *   kills            倒した敵の数
  *   damage           与えた総ダメージ
  *   score            撃破ポイントの合計
+ *   level            いま育てている円のレベル
+ *   maxLevel         これまでに届いた一番上のレベル
  *   lastActivity     最後に何かした時刻 (ミリ秒)
  *
  * チームの概念はありません。並ぶのは常に個人です。
@@ -69,6 +71,8 @@
         kills: 0,
         damage: 0,
         score: 0,
+        level: 0,
+        maxLevel: 0,
         lastActivity: at != null ? at : this.now(),
         /** デモ視聴者かどうか。本物のイベントが来たら消せるように印を付けます。 */
         demo: Boolean(user.demo)
@@ -86,6 +90,19 @@
 
   Leaderboard.prototype.get = function (userId) {
     return this.users[String(userId)] || null;
+  };
+
+  /**
+   * いま育てている円のレベルを記録する。
+   * maxLevel は下がりません (最大まで育てた実績は残ります)。
+   */
+  Leaderboard.prototype.setLevel = function (user, level, at) {
+    var record = this.touch(user, at);
+    if (!record) return null;
+    record.level = level;
+    if (level > record.maxLevel) record.maxLevel = level;
+    this._changed();
+    return record;
   };
 
   /** 与えたダメージを記録する。 */

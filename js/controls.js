@@ -48,6 +48,7 @@
     click('btn-like100', function () { self.send({ type: 'like', count: 100 }); });
     click('btn-follow', function () { self.send({ type: 'follow' }); });
     click('btn-share', function () { self.send({ type: 'share' }); });
+    click('btn-join', function () { self.send({ type: 'member' }); });
     click('btn-comment', function () { self.send({ type: 'chat', comment: 'hello' }); });
 
     click('btn-gift', function () {

@@ -138,6 +138,11 @@
     for (i = 0; i < state.circles.length; i += 1) {
       this._drawCircle(ctx, state.circles[i], scale);
     }
+    // レベルは円を全部描いたあとに描きます。円と一緒に描くと、
+    // あとから描かれた円の下に隠れて読めなくなるためです。
+    for (i = 0; i < state.circles.length; i += 1) {
+      this._drawLevel(ctx, state.circles[i], scale);
+    }
     this._drawBursts(ctx, scale, now);
     this._drawHud(state);
     this.renderRanking();
@@ -263,6 +268,77 @@
   };
 
   /**
+   * レベルのバッジ。円の下に小さく出します。
+   *
+   * 育てるゲームなので、自分の円が今いくつなのかが見えないと張り合いが
+   * ありません。最大レベルは色を変えて、育てきったことが分かるようにします。
+   */
+  Renderer.prototype._drawLevel = function (ctx, circle, scale) {
+    var r = circle.radius * scale;
+    if (r < 11) return;                     // 小さすぎて読めないものは出さない
+
+    var badge = this._levelBadge(circle.level);
+    if (!badge) return;
+
+    // バッジは**円の中**に収めます。円の外に出すと、円が密集したときに
+    // 隣の円のバッジと重なって、画面が数字で埋まってしまいます。
+    var width = Math.min(r * 1.5, r * 2 * 0.92);
+    var height = width / badge.ratio;
+    var x = circle.position.x * scale - width / 2;
+    var y = circle.position.y * scale + r - height * 1.15;
+
+    ctx.drawImage(badge.canvas, x, y, width, height);
+  };
+
+  /**
+   * レベルのバッジは 1 段階につき 1 枚だけ作って使い回します。
+   *
+   * 文字を毎フレーム組むと、円が 200 個あるだけで 1ms 近くかかります
+   * (実測で描画時間の 4 割)。絵にしておけば貼るだけで済みます。
+   */
+  Renderer.prototype._levelBadge = function (level) {
+    if (!this._badges) this._badges = {};
+    if (this._badges[level]) return this._badges[level];
+    if (typeof document === 'undefined') return null;
+
+    var max = this.engine.maxLevel ? this.engine.maxLevel() : 100;
+    var maxed = level >= max;
+    var text = 'Lv' + level;
+
+    // 元絵は大きめに作り、貼るときに縮めます (拡大するとぼやけるため)
+    var font = 44;
+    var measure = document.createElement('canvas').getContext('2d');
+    measure.font = 'bold ' + font + 'px system-ui, sans-serif';
+    var width = Math.ceil(measure.measureText(text).width + font * 0.9);
+    var height = Math.ceil(font * 1.5);
+
+    var canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    var ctx = canvas.getContext('2d');
+    ctx.font = 'bold ' + font + 'px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    var radius = height / 2;
+    ctx.beginPath();
+    ctx.moveTo(radius, 0);
+    ctx.lineTo(width - radius, 0);
+    ctx.arc(width - radius, radius, radius, -Math.PI / 2, Math.PI / 2);
+    ctx.lineTo(radius, height);
+    ctx.arc(radius, radius, radius, Math.PI / 2, -Math.PI / 2);
+    ctx.closePath();
+    ctx.fillStyle = maxed ? '#facc15' : 'rgba(8, 10, 24, 0.82)';
+    ctx.fill();
+
+    ctx.fillStyle = maxed ? '#1b1200' : '#ffffff';
+    ctx.fillText(text, width / 2, height / 2 + 1);
+
+    this._badges[level] = { canvas: canvas, ratio: width / height };
+    return this._badges[level];
+  };
+
+  /**
    * アイテム。ゆっくり回る菱形で、円とも敵とも見た目を変えています。
    * 消える少し前から点滅させて、取り逃しが分かるようにしています。
    */
@@ -371,6 +447,7 @@
         '<span class="rank__no">' + (i + 1) + '</span>' +
         '<span class="rank__avatar"><img alt="" hidden><span class="rank__initial"></span></span>' +
         '<span class="rank__name"></span>' +
+        '<span class="rank__level"></span>' +
         '<span class="rank__value"></span>';
 
       list.appendChild(row);
@@ -379,6 +456,7 @@
         img: row.querySelector('img'),
         initial: row.querySelector('.rank__initial'),
         name: row.querySelector('.rank__name'),
+        level: row.querySelector('.rank__level'),
         value: row.querySelector('.rank__value'),
         userId: null,
         src: null
@@ -428,6 +506,13 @@
         row.img.src = record.profileImageUrl;
         row.img.hidden = false;
         row.img.onerror = function () { this.hidden = true; };   // 取れなければ頭文字に戻す
+      }
+
+      if (record.maxLevel > 0) {
+        row.level.textContent = 'Lv' + record.maxLevel;
+        row.level.hidden = false;
+      } else {
+        row.level.hidden = true;
       }
 
       var value = metric === 'kills' ? record.kills

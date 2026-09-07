@@ -4,23 +4,57 @@ const { setup } = require('./helpers.js');
 
 const circlesOf = (engine, ownerId) => engine.circles.filter((c) => c.ownerId === ownerId);
 
-test('10 LIKE で弱い円が 1 個', () => {
+test('10 LIKE で 1 レベル', () => {
   const { engine, send } = setup();
   send({ type: 'like', user: { id: 'u1', uniqueId: 'taro' }, count: 10 });
 
   const mine = circlesOf(engine, 'u1');
-  assert.strictEqual(mine.length, 1);
+  assert.strictEqual(mine.length, 1, '円は 1 つだけのはず');
+  assert.strictEqual(mine[0].level, 1);
   assert.strictEqual(mine[0].sourceEvent, 'LIKE');
-  assert.strictEqual(mine[0].strength, 1);
 });
 
-test('20 LIKE で 2 個、100 LIKE で 10 個', () => {
+test('LIKE を続けると同じ円が育つ (増えない)', () => {
   const { engine, send } = setup();
-  send({ type: 'like', user: { id: 'a', uniqueId: 'a' }, count: 20 });
-  send({ type: 'like', user: { id: 'b', uniqueId: 'b' }, count: 100 });
+  const user = { id: 'u1', uniqueId: 'taro' };
 
-  assert.strictEqual(circlesOf(engine, 'a').length, 2);
-  assert.strictEqual(circlesOf(engine, 'b').length, 10);
+  send({ type: 'like', user, count: 100 });        // 10 レベル
+  assert.strictEqual(circlesOf(engine, 'u1').length, 1);
+  assert.strictEqual(circlesOf(engine, 'u1')[0].level, 10);
+
+  send({ type: 'like', user, count: 100 });        // さらに 10 レベル
+  assert.strictEqual(circlesOf(engine, 'u1').length, 1, '円が増えている');
+  assert.strictEqual(circlesOf(engine, 'u1')[0].level, 20);
+});
+
+test('育つと強く・大きくなる', () => {
+  const { engine, send } = setup();
+  const user = { id: 'u1', uniqueId: 'taro' };
+
+  send({ type: 'like', user, count: 10 });
+  const circle = circlesOf(engine, 'u1')[0];
+  const low = { hp: circle.maxHp, attack: circle.attack, radius: circle.radius };
+
+  send({ type: 'like', user, count: 500 });        // +50 レベル
+
+  assert.ok(circle.maxHp > low.hp, 'HP が増えていない');
+  assert.ok(circle.attack > low.attack, '攻撃力が上がっていない');
+  assert.ok(circle.radius > low.radius, '大きくなっていない');
+});
+
+test('育てても HP の残りは減らない (増えたぶんは回復する)', () => {
+  const { engine, send } = setup();
+  const user = { id: 'u1', uniqueId: 'taro' };
+
+  send({ type: 'like', user, count: 10 });
+  const circle = circlesOf(engine, 'u1')[0];
+  circle.hp = Math.round(circle.maxHp / 2);
+  const before = circle.hp;
+
+  send({ type: 'like', user, count: 200 });
+
+  assert.ok(circle.hp > before, '育てたのに HP が増えていない');
+  assert.ok(circle.hp <= circle.maxHp);
 });
 
 test('LIKE の端数はユーザーごとに次へ繰り越す', () => {
@@ -28,13 +62,13 @@ test('LIKE の端数はユーザーごとに次へ繰り越す', () => {
   const user = { id: 'u1', uniqueId: 'taro' };
 
   send({ type: 'like', user, count: 7 });
-  assert.strictEqual(circlesOf(engine, 'u1').length, 0);
+  assert.strictEqual(circlesOf(engine, 'u1').length, 0, 'まだレベル 1 に届かない');
 
   send({ type: 'like', user, count: 5 });                 // 合計 12
-  assert.strictEqual(circlesOf(engine, 'u1').length, 1);
+  assert.strictEqual(circlesOf(engine, 'u1')[0].level, 1);
 
   send({ type: 'like', user, count: 8 });                 // 端数 2 + 8 = 10
-  assert.strictEqual(circlesOf(engine, 'u1').length, 2);
+  assert.strictEqual(circlesOf(engine, 'u1')[0].level, 2);
 });
 
 test('LIKE の端数は他人と混ざらない', () => {
@@ -45,41 +79,130 @@ test('LIKE の端数は他人と混ざらない', () => {
   assert.strictEqual(engine.circles.length, 0);
 });
 
-test('FOLLOW と SHARE で中程度の円が 1 個ずつ', () => {
+test('FOLLOW と SHARE でもレベルが上がる', () => {
   const { engine, send, config } = setup();
-  send({ type: 'follow', user: { id: 'u1', uniqueId: 'taro' } });
-  send({ type: 'share', user: { id: 'u1', uniqueId: 'taro' } });
+  const user = { id: 'u1', uniqueId: 'taro' };
+  const levels = config.viewers.levels;
 
-  const mine = circlesOf(engine, 'u1');
-  assert.strictEqual(mine.length, 2);
-  assert.deepStrictEqual(mine.map((c) => c.sourceEvent), ['FOLLOW', 'SHARE']);
-  assert.strictEqual(mine[0].strength, config.viewers.follow.strength);
-  assert.ok(mine[0].hp > 40, 'LIKE の円より強くない');
+  send({ type: 'follow', user });
+  assert.strictEqual(circlesOf(engine, 'u1').length, 1);
+  assert.strictEqual(circlesOf(engine, 'u1')[0].level, levels.follow);
+
+  send({ type: 'share', user });
+  assert.strictEqual(circlesOf(engine, 'u1').length, 1, '円が増えている');
+  assert.strictEqual(circlesOf(engine, 'u1')[0].level, levels.follow + levels.share);
 });
 
-test('GIFT はコイン価値ぶん強い円になる', () => {
+test('GIFT はコイン価値ぶんレベルが上がる', () => {
   const { engine, send, config } = setup();
-  const gift = config.viewers.gift;
+  const perCoin = config.viewers.levels.giftLevelsPerCoin;
 
-  send({ type: 'gift', user: { id: 'a', uniqueId: 'a' }, diamondCount: 1, repeatCount: 1 });
-  send({ type: 'gift', user: { id: 'b', uniqueId: 'b' }, diamondCount: 100, repeatCount: 1 });
+  send({ type: 'gift', user: { id: 'a', uniqueId: 'a' }, diamondCount: 5, repeatCount: 1 });
+  send({ type: 'gift', user: { id: 'b', uniqueId: 'b' }, diamondCount: 30, repeatCount: 1 });
 
-  const small = circlesOf(engine, 'a')[0];
-  const big = circlesOf(engine, 'b')[0];
-
-  assert.strictEqual(small.strength, gift.baseStrength + 1 * gift.strengthPerCoin);
-  assert.strictEqual(big.strength, gift.baseStrength + 100 * gift.strengthPerCoin);
-  assert.ok(big.hp > small.hp * 5, 'ギフトの価値が強さに反映されていない');
-  assert.strictEqual(big.sourceEvent, 'GIFT');
+  assert.strictEqual(circlesOf(engine, 'a')[0].level, 5 * perCoin);
+  assert.strictEqual(circlesOf(engine, 'b')[0].level, 30 * perCoin);
 });
 
-test('高額ギフトでも上限を超えない', () => {
+test('高額ギフトでも上限レベルを超えない', () => {
   const { engine, send, config } = setup();
   send({ type: 'gift', user: { id: 'a', uniqueId: 'a' }, diamondCount: 100_000, repeatCount: 10 });
 
   const circle = circlesOf(engine, 'a')[0];
-  assert.strictEqual(circle.strength, config.viewers.scaling.maxStrength);
+  assert.strictEqual(circle.level, config.viewers.levels.max);
   assert.ok(circle.radius <= config.viewers.scaling.maxRadius);
+});
+
+test('最大レベルに達した円はそのまま残り、次の行動で新しい円ができる', () => {
+  const { engine, send, config } = setup();
+  const user = { id: 'u1', uniqueId: 'taro' };
+  const max = config.viewers.levels.max;
+
+  send({ type: 'gift', user, diamondCount: 1000, repeatCount: 1 });   // 一気に最大まで
+  const maxed = circlesOf(engine, 'u1')[0];
+  assert.strictEqual(maxed.level, max);
+
+  send({ type: 'like', user, count: 10 });                            // 次の行動
+
+  const mine = circlesOf(engine, 'u1');
+  assert.strictEqual(mine.length, 2, '新しい円ができていない');
+  assert.strictEqual(mine[0].id, maxed.id, '最大レベルの円が消えている');
+  assert.strictEqual(mine[0].level, max, '最大レベルの円が変わっている');
+  assert.strictEqual(mine[1].level, 1, '新しい円がレベル 1 で始まっていない');
+
+  send({ type: 'like', user, count: 30 });                            // 新しい円が育つ
+  assert.strictEqual(circlesOf(engine, 'u1').length, 2);
+  assert.strictEqual(circlesOf(engine, 'u1')[1].level, 4);
+});
+
+test('最大レベルのあとのギフトは、その価値ぶんのレベルで始まる', () => {
+  const { engine, send, config } = setup();
+  const user = { id: 'u1', uniqueId: 'taro' };
+
+  send({ type: 'gift', user, diamondCount: 1000, repeatCount: 1 });   // 最大まで
+  send({ type: 'gift', user, diamondCount: 40, repeatCount: 1 });     // 次の行動
+
+  const mine = circlesOf(engine, 'u1');
+  assert.strictEqual(mine.length, 2);
+  assert.strictEqual(mine[0].level, config.viewers.levels.max);
+  assert.strictEqual(mine[1].level, 40);
+});
+
+test('入室すると 20 レベルの円をもらえる (1 人 1 回だけ)', () => {
+  const { engine, send, config } = setup();
+  const user = { id: 'u1', uniqueId: 'taro' };
+
+  send({ type: 'member', user });
+  assert.strictEqual(circlesOf(engine, 'u1').length, 1);
+  assert.strictEqual(circlesOf(engine, 'u1')[0].level, config.viewers.levels.join);
+  assert.strictEqual(circlesOf(engine, 'u1')[0].sourceEvent, 'JOIN');
+
+  send({ type: 'member', user });
+  send({ type: 'member', user });
+  assert.strictEqual(circlesOf(engine, 'u1').length, 1, '入り直すたびにもらえてしまう');
+});
+
+test('入室でもらった円も LIKE で育つ', () => {
+  const { engine, send, config } = setup();
+  const user = { id: 'u1', uniqueId: 'taro' };
+
+  send({ type: 'member', user });
+  send({ type: 'like', user, count: 50 });                            // +5 レベル
+
+  const mine = circlesOf(engine, 'u1');
+  assert.strictEqual(mine.length, 1);
+  assert.strictEqual(mine[0].level, config.viewers.levels.join + 5);
+});
+
+test('円が力尽きたら、次の行動で新しい円ができる', () => {
+  const { engine, send } = setup();
+  const user = { id: 'u1', uniqueId: 'taro' };
+
+  send({ type: 'like', user, count: 100 });
+  const first = circlesOf(engine, 'u1')[0];
+  assert.strictEqual(first.level, 10);
+
+  // 力尽きさせる
+  engine._damageCircle(first, first.hp);
+  engine._cleanup();
+  assert.strictEqual(circlesOf(engine, 'u1').length, 0);
+
+  send({ type: 'like', user, count: 30 });
+  assert.strictEqual(circlesOf(engine, 'u1').length, 1, '作り直されていない');
+  assert.strictEqual(circlesOf(engine, 'u1')[0].level, 3);
+});
+
+test('他の人の行動で自分の円は変わらない', () => {
+  const { engine, send } = setup();
+  send({ type: 'like', user: { id: 'a', uniqueId: 'a' }, count: 100 });
+  const before = circlesOf(engine, 'a')[0].level;
+
+  for (let i = 0; i < 20; i += 1) {
+    send({ type: 'like', user: { id: 'b', uniqueId: 'b' }, count: 100 });
+  }
+
+  assert.strictEqual(circlesOf(engine, 'a').length, 1);
+  assert.strictEqual(circlesOf(engine, 'a')[0].level, before);
 });
 
 test('コメントでは円が出ない (チーム分けもしない)', () => {
@@ -159,7 +282,7 @@ test('倒すとランキングが自動で更新される', () => {
   enemy.position.x = 500;
   enemy.position.y = 500;
 
-  const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', strength: 20 });
+  const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', level: 20 });
   circle.position.x = 500;
   circle.position.y = 500;
 
@@ -185,7 +308,7 @@ test('ダメージにもスコアを付けられる (設定)', () => {
   const enemy = engine.spawnEnemy('boss');
   enemy.position.x = 500;
   enemy.position.y = 500;
-  const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', strength: 5 });
+  const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', level: 5 });
   circle.position.x = 500;
   circle.position.y = 500;
 
@@ -206,53 +329,77 @@ test('プロフィール画像がランキングまで届く', () => {
   assert.strictEqual(leaderboard.get('u1').profileImageUrl, 'https://x/100x100/a.webp');
 });
 
-test('円は足し算で増える (10 個出ているところに 100 LIKE で 20 個)', () => {
-  const { engine, send } = setup();
+
+test('レベルは 1 から 100 まで (10 LIKE = 1 レベル)', () => {
+  const { engine, send, config } = setup();
   const user = { id: 'u1', uniqueId: 'taro' };
+  const max = config.viewers.levels.max;
 
-  send({ type: 'like', user, count: 100 });
-  assert.strictEqual(circlesOf(engine, 'u1').length, 10);
-
-  send({ type: 'like', user, count: 100 });
-  assert.strictEqual(circlesOf(engine, 'u1').length, 20,
-    '古い円が消えて増えていない (1 人あたりの上限が低すぎる)');
-
-  send({ type: 'like', user, count: 100 });
-  assert.strictEqual(circlesOf(engine, 'u1').length, 30);
-});
-
-test('ギフトや FOLLOW の円も、LIKE の円に足される', () => {
-  const { engine, send } = setup();
-  const user = { id: 'u1', uniqueId: 'taro' };
-
-  send({ type: 'like', user, count: 100 });
-  send({ type: 'follow', user });
-  send({ type: 'share', user });
-  send({ type: 'gift', user, diamondCount: 50 });
-
-  assert.strictEqual(circlesOf(engine, 'u1').length, 13);
-});
-
-test('上限に達したときだけ、その人の一番古い円と入れ替わる', () => {
-  const { engine, send, config } = setup({ config: { viewers: { limits: { maxPerUser: 12 } } } });
-  const user = { id: 'u1', uniqueId: 'taro' };
-
-  send({ type: 'like', user, count: 100 });
-  const oldest = circlesOf(engine, 'u1')[0].id;
-
-  send({ type: 'like', user, count: 100 });
+  // 10 LIKE を 100 回 = ちょうど最大レベル
+  for (let i = 0; i < max; i += 1) send({ type: 'like', user, count: 10 });
 
   const mine = circlesOf(engine, 'u1');
-  assert.strictEqual(mine.length, config.viewers.limits.maxPerUser);
-  assert.ok(!mine.some((c) => c.id === oldest), '一番古い円が残っている');
+  assert.strictEqual(mine.length, 1, `${mine.length} 個に増えている`);
+  assert.strictEqual(mine[0].level, max);
 });
 
-test('他人の円は減らない', () => {
+test('レベルは飛ばさずに上がる (1 レベルずつ確認)', () => {
   const { engine, send } = setup();
-  send({ type: 'like', user: { id: 'a', uniqueId: 'a' }, count: 100 });
-  send({ type: 'like', user: { id: 'b', uniqueId: 'b' }, count: 100 });
-  send({ type: 'like', user: { id: 'b', uniqueId: 'b' }, count: 100 });
+  const user = { id: 'u1', uniqueId: 'taro' };
 
-  assert.strictEqual(circlesOf(engine, 'a').length, 10, '他人の LIKE で減っている');
-  assert.strictEqual(circlesOf(engine, 'b').length, 20);
+  for (let expected = 1; expected <= 20; expected += 1) {
+    send({ type: 'like', user, count: 10 });
+    assert.strictEqual(circlesOf(engine, 'u1')[0].level, expected);
+  }
+});
+
+test('ランキングにレベルが残る', () => {
+  const { send, leaderboard, config } = setup();
+  const user = { id: 'u1', uniqueId: 'taro' };
+
+  send({ type: 'like', user, count: 250 });                 // 25 レベル
+  assert.strictEqual(leaderboard.get('u1').level, 25);
+  assert.strictEqual(leaderboard.get('u1').maxLevel, 25);
+
+  send({ type: 'gift', user, diamondCount: 1000 });          // 最大まで
+  send({ type: 'like', user, count: 10 });                   // 新しい円 (レベル 1)
+
+  assert.strictEqual(leaderboard.get('u1').level, 1, 'いまのレベルが追えていない');
+  assert.strictEqual(leaderboard.get('u1').maxLevel, config.viewers.levels.max,
+    '最大まで育てた記録が消えている');
+});
+
+test('レベルアップが通知される (音と表示のため)', () => {
+  const { session, send } = setup();
+  const ups = [];
+  const spawns = [];
+  session.on('levelup', (up) => ups.push(up));
+  session.on('spawn', (spawn) => spawns.push(spawn));
+
+  const user = { id: 'u1', uniqueId: 'taro' };
+  send({ type: 'like', user, count: 10 });                   // 生まれる
+  send({ type: 'like', user, count: 30 });                   // 育つ
+
+  assert.strictEqual(spawns.length, 1);
+  assert.strictEqual(spawns[0].level, 1);
+  assert.strictEqual(ups.length, 1);
+  assert.strictEqual(ups[0].from, 1);
+  assert.strictEqual(ups[0].to, 4);
+  assert.strictEqual(ups[0].sourceEvent, 'LIKE');
+});
+
+test('100 人が LIKE を送っても、円は 1 人 1 つずつ', () => {
+  const harness = setup();
+  for (let i = 1; i <= 100; i += 1) {
+    for (let n = 0; n < 5; n += 1) {
+      harness.send({ type: 'like', user: { id: 'u' + i, uniqueId: 'v' + i }, count: 30 });
+    }
+  }
+
+  const perUser = {};
+  harness.engine.circles.forEach((c) => { perUser[c.ownerId] = (perUser[c.ownerId] || 0) + 1; });
+
+  assert.strictEqual(harness.engine.circles.length, 100, '円が 100 個より多い / 少ない');
+  assert.ok(Object.values(perUser).every((n) => n === 1), '1 人で複数の円を持っている');
+  assert.strictEqual(harness.engine.circles[0].level, 15);
 });

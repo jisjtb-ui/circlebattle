@@ -87,9 +87,13 @@
     });
 
     session.on('spawn', function (spawn) {
-      if (!spawn.count) return;
-      var byEvent = { LIKE: 'spawn', FOLLOW: 'follow', SHARE: 'share', GIFT: 'gift' };
+      var byEvent = { LIKE: 'spawn', FOLLOW: 'follow', SHARE: 'share', GIFT: 'gift', JOIN: 'follow' };
       sfx.play(byEvent[spawn.sourceEvent] || 'spawn');
+    });
+
+    session.on('levelup', function (up) {
+      var byEvent = { LIKE: 'spawn', FOLLOW: 'follow', SHARE: 'share', GIFT: 'gift' };
+      sfx.play(byEvent[up.sourceEvent] || 'spawn');
     });
 
     // 1 位が入れ替わったときだけ鳴らす (順位が動くたびに鳴らすとうるさい)。
@@ -120,8 +124,15 @@
 
     // 画面に出す一時通知。ゲームの進行には影響しません。
     session.on('spawn', function (spawn) {
-      if (spawn.sourceEvent === 'LIKE' || !spawn.count) return;
-      renderer.showNotice('@' + spawn.user.uniqueId + ' → ' + spawn.sourceEvent);
+      renderer.showNotice('@' + spawn.user.uniqueId + ' → Lv' + spawn.level +
+                          ' (' + spawn.sourceEvent + ')');
+    });
+
+    // 最大レベルに届いたときだけ知らせる (毎回のレベルアップを出すと流れ続けます)
+    session.on('levelup', function (up) {
+      if (up.to < config.viewers.levels.max || up.from >= up.to) return;
+      renderer.showNotice('@' + up.user.uniqueId + ' → Lv' + up.to + ' MAX');
+      sfx.play('rank');
     });
 
     // コメントは今回のゲームでは何もしません。将来のコマンド用に

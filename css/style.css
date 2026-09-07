@@ -233,7 +233,7 @@ body {
 .rank {
   --hue: 200;
   display: grid;
-  grid-template-columns: 2.2ch auto minmax(0, 1fr) auto;
+  grid-template-columns: 2.2ch auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
   padding: 3px 6px;
@@ -283,6 +283,17 @@ body {
 .rank__name {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rank__level {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85em;
+  font-weight: 700;
+  color: #fde68a;
+  background: rgba(250, 204, 21, 0.14);
+  border-radius: 6px;
+  padding: 1px 6px;
   white-space: nowrap;
 }
 
