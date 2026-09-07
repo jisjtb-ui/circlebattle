@@ -609,6 +609,9 @@ html, body {
 }
 
 .event--spawn { border-left-color: #38bdf8; }
+/* 入室は 1 人 1 回だけ。他の行より目を引く色にしてあります */
+.event--join { border-left-color: #fbbf24; background: rgba(250, 204, 21, 0.16); }
+.event--join .event__user { color: #fde68a; }
 .event--max { border-left-color: #fbbf24; }
 .event--rank { border-left-color: #f472b6; }
 .event--queue { border-left-color: #94a3b8; }

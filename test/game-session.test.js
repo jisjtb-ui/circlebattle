@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { setup } = require('./helpers.js');
+const { setup, makeConfig } = require('./helpers.js');
 
 const circlesOf = (engine, ownerId) => engine.circles.filter((c) => c.ownerId === ownerId);
 
@@ -579,4 +579,36 @@ test('コンボを切ると倍率は掛からない', () => {
 
   assert.strictEqual(kill.combo, 1);
   assert.strictEqual(kill.points, 100);
+});
+
+// ------------------------------------------------------- 入室のハイライト
+
+test('入室で生まれた円は、順番待ちから出てきても JOIN のまま', () => {
+  // 画面はこの sourceEvent を見て光らせるので、途中で消えると
+  // 「入ってきた人の円がどれか」が分からなくなります。
+  const { engine, session, send, config } = setup();
+  const user = { id: 'u1', uniqueId: 'taro' };
+  const cap = config.viewers.limits.maxPerUser;
+
+  for (let i = 0; i < cap; i += 1) send({ type: 'gift', user, diamondCount: 100 });
+  send({ type: 'member', user });                    // 満員なので順番待ちへ
+  assert.strictEqual(session._player('u1').queue.length, 1);
+
+  const victim = circlesOf(engine, 'u1')[0];
+  engine._damageCircle(victim, victim.maxHp * 10);
+  engine._cleanup();
+
+  const released = circlesOf(engine, 'u1').pop();
+  assert.strictEqual(released.sourceEvent, 'JOIN', '順番待ちを通ると JOIN が消えている');
+  assert.strictEqual(released.level, config.viewers.levels.join);
+});
+
+test('入室のハイライトは設定で消せる', () => {
+  const config = makeConfig({ ui: { join: { highlightMs: 0 } } });
+  assert.strictEqual(config.ui.join.highlightMs, 0);
+
+  // 色と文字はいつでも変えられる
+  const custom = makeConfig({ ui: { join: { color: '#ff0000', label: 'NEW' } } });
+  assert.strictEqual(custom.ui.join.color, '#ff0000');
+  assert.strictEqual(custom.ui.join.label, 'NEW');
 });

@@ -222,8 +222,21 @@
     // 生まれた。**自分の円が出たことが分かる**のが、次の LIKE を押す理由になります。
     listen(session, 'spawn', function (spawn) {
       play(SPAWN_SFX[spawn.sourceEvent] || 'spawn');
+
+      // 入室は 1 人 1 回だけの「初めまして」なので、他の生まれ方と分けて出します。
+      // 円のほうにも光る輪が出るので (renderer)、どれが自分か分かります。
+      var joined = spawn.sourceEvent === 'JOIN';
       renderer.pushEvent(spawn.user.uniqueId,
-        spawn.sourceEvent + ' → Lv' + spawn.level, 'spawn');
+        joined ? 'JOINED → Lv' + spawn.level : spawn.sourceEvent + ' → Lv' + spawn.level,
+        joined ? 'join' : 'spawn');
+
+      if (joined && spawn.circle) {
+        var color = config.ui.join.color;
+        renderer.float('WELCOME', spawn.circle.position.x, above(spawn.circle),
+          { color: color, size: 34 });
+        renderer.flash(spawn.circle.position.x, spawn.circle.position.y,
+          spawn.circle.radius * 1.4, color);
+      }
     });
 
     // レベルアップは 10 LIKE ごとに起きるので、行としては出しません

@@ -197,6 +197,13 @@
     for (i = 0; i < state.enemies.length; i += 1) {
       this._drawEnemy(ctx, state.enemies[i], scale);
     }
+    // 入室した人の円を目立たせる輪。円より先に描くので、
+    // どれだけ光っても顔が隠れることはありません。
+    if (this.config.ui.join.highlightMs > 0) {
+      for (i = 0; i < state.circles.length; i += 1) {
+        this._drawJoinRing(ctx, state.circles[i], scale, now);
+      }
+    }
     // 武器は円より**先に**描きます。あとから円を描けば、どんな武器でも
     // プロフィール画像の上に来ることがありません。
     if (this.weapons) {
@@ -220,6 +227,11 @@
     if (this.config.ui.nameTagMs > 0) {
       for (i = 0; i < state.circles.length; i += 1) {
         this._drawNameTag(ctx, state.circles[i], scale, now);
+      }
+    }
+    if (this.config.ui.join.highlightMs > 0) {
+      for (i = 0; i < state.circles.length; i += 1) {
+        this._drawJoinLabel(ctx, state.circles[i], scale, now);
       }
     }
     this._drawBursts(ctx, scale, now);
@@ -616,6 +628,84 @@
       ctx.stroke();
       ctx.restore();
     }
+  };
+
+  /**
+   * 入室 (JOIN) で生まれた円か。生まれてから少しの間だけ true。
+   *
+   * @returns {number} 0〜1 の残り具合。0 なら対象外
+   */
+  Renderer.prototype._joinGlow = function (circle, now) {
+    if (circle.sourceEvent !== 'JOIN') return 0;
+    var life = this.config.ui.join.highlightMs;
+    var age = now - circle.bornAt;
+    if (age < 0 || age > life) return 0;
+    return 1 - age / life;
+  };
+
+  /**
+   * 入室した人の円を囲む光の輪。
+   *
+   * JOIN は 1 人 1 回だけの「初めまして」です。入ってきた人が自分の円を
+   * 見つけられるように、少しの間だけはっきり目立たせます。
+   * **円より先に描く**ので、どれだけ光ってもプロフィール画像は隠れません。
+   */
+  Renderer.prototype._drawJoinRing = function (ctx, circle, scale, now) {
+    var left = this._joinGlow(circle, now);
+    if (!left) return;
+
+    var settings = this.config.ui.join;
+    var x = circle.position.x * scale;
+    var y = circle.position.y * scale;
+    var r = circle.radius * scale;
+
+    // 生まれた瞬間に大きく広がって、そのあとは脈打つだけ。
+    // ずっと同じ強さで光らせると、ただの飾りに見えて目を引きません。
+    var burst = Math.max(0, 1 - (now - circle.bornAt) / 600);
+    var pulse = 1 + Math.sin(now / 220) * 0.06;
+    var outer = r * (1.28 + burst * 1.2) * pulse;
+
+    ctx.save();
+    ctx.strokeStyle = settings.color;
+    ctx.globalAlpha = Math.min(1, left * 1.6);
+
+    ctx.lineWidth = Math.max(2, r * 0.16);
+    ctx.beginPath();
+    ctx.arc(x, y, outer, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 内側にもう 1 本。1 本だけだと敵の HP リングと見分けが付きません。
+    ctx.globalAlpha = Math.min(1, left * 0.9);
+    ctx.lineWidth = Math.max(1.2, r * 0.07);
+    ctx.beginPath();
+    ctx.arc(x, y, outer + ctx.lineWidth * 2.2, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  };
+
+  /** 入室した円の上に出す短い文字。 */
+  Renderer.prototype._drawJoinLabel = function (ctx, circle, scale, now) {
+    var left = this._joinGlow(circle, now);
+    if (!left) return;
+
+    var settings = this.config.ui.join;
+    var r = circle.radius * scale;
+    var px = Math.max(10, r * 0.62);
+    var x = circle.position.x * scale;
+    // 名前が円の下に出るので、こちらは上に置きます (重ならないように)
+    var y = circle.position.y * scale - r - px * 0.9;
+
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, left * 2);
+    ctx.font = 'bold ' + px.toFixed(1) + 'px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.lineWidth = 3.5;
+    ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+    ctx.strokeText(settings.label, x, y);
+    ctx.fillStyle = settings.color;
+    ctx.fillText(settings.label, x, y);
+    ctx.restore();
   };
 
   /**
