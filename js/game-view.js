@@ -26,6 +26,16 @@
   var SPAWN_SFX = { LIKE: 'spawn', FOLLOW: 'follow', SHARE: 'share', GIFT: 'gift', JOIN: 'follow' };
 
   /**
+   * 円の上に文字を出す高さ。
+   *
+   * 円の真ん中に出すと、その 1 秒ほどプロフィール画像が読めません。
+   * 「自分の円だ」と分かることが一番大事なので、文字は必ず上へ逃がします。
+   */
+  function above(circle) {
+    return circle.position.y - circle.radius * 1.7;
+  }
+
+  /**
    * @param {object} app     CB.createApp() が返す塊 (共有されているもの)
    * @param {object} options { doc, win, preview }
    *        preview: true なら操作画面の中の小さい表示。音は鳴らしません
@@ -135,7 +145,11 @@
     var engine = app.engine;
     var session = app.session;
 
-    listen(engine, 'damage', function () { play('hit'); });
+    listen(engine, 'damage', function (hit) {
+      play('hit');
+      // 武器ごとの斬撃・弾・衝撃。描く側で数と大きさを絞っています
+      renderer.attackEffect(hit.circle, hit.enemy);
+    });
 
     listen(engine, 'enemy:killed', function (kill) {
       var type = engine.getEnemyType(kill.typeId);
@@ -170,15 +184,22 @@
 
     listen(engine, 'item:taken', function (taken) {
       play('item');
-      renderer.float(taken.item.label, taken.circle.position.x, taken.circle.position.y,
+      renderer.float(taken.item.label, taken.circle.position.x, above(taken.circle),
         { color: taken.item.color, size: 36 });
     });
 
+    // Lv100 は最終到達点。ここだけ他と明確に違う出し方にします
     listen(engine, 'circle:maxed', function (event) {
+      var circle = event.circle;
+      var tier = renderer.weapons ? renderer.weapons.tierFor(circle.level) : null;
+      var color = tier ? tier.color : '#fde047';
+
       play('rank');
-      renderer.float('MAX LEVEL', event.circle.position.x, event.circle.position.y,
-        { color: '#fde047', size: 46 });
-      renderer.pushEvent(event.circle.ownerName, 'MAX LEVEL', 'max');
+      renderer.float('LEGENDARY', circle.position.x, above(circle),
+        { color: color, size: 52 });
+      renderer.flash(circle.position.x, circle.position.y, circle.radius * 1.6, color);
+      renderer.showStageBanner('LEVEL 100', 'LEGENDARY CORE', 2200);
+      renderer.pushEvent(circle.ownerName, 'LEGENDARY CORE', 'max');
     });
 
     // 生まれた。**自分の円が出たことが分かる**のが、次の LIKE を押す理由になります。
@@ -193,9 +214,38 @@
     listen(session, 'levelup', function (up) {
       play(SPAWN_SFX[up.sourceEvent] || 'spawn');
       // レベルの数字はその場に小さく飛ばすだけ。円のバッジも同時に変わります。
-      renderer.float('Lv' + up.to, up.circle.position.x, up.circle.position.y,
+      renderer.float('Lv' + up.to, up.circle.position.x, above(up.circle),
         { color: '#7dd3fc', size: 30 });
+      showWeaponUpgrade(up.circle, up.from, up.to);
     });
+
+    /**
+     * 武器の段が変わったときの演出。
+     *
+     * **ゲームは止めません。** 止めると、その間 TikTok の画面では何も
+     * 起きていないように見えます。出すのは円のところに飛ぶ文字と閃光だけで、
+     * 節目 (Lv50 / Lv100) のときだけ中央に短いバナーを足します。
+     */
+    function showWeaponUpgrade(circle, from, to) {
+      var weapons = renderer.weapons;
+      if (!weapons || !circle) return;
+
+      var tier = weapons.tierChanged(from, to);
+      if (!tier) return;
+      // Lv100 は 'circle:maxed' が受け持ちます (ここでも出すと 2 重になります)
+      if (tier.minLevel >= config.viewers.levels.max) return;
+
+      renderer.float(tier.name, circle.position.x, above(circle),
+        { color: tier.color, size: 44 });
+      renderer.flash(circle.position.x, circle.position.y, circle.radius, tier.color);
+      play('rank');
+
+      // 節目だけ中央にも出します。毎段出すと 10 回ぶん画面をふさぎます
+      if (config.weapons.milestones.indexOf(tier.minLevel) === -1) return;
+      renderer.showStageBanner('LEVEL ' + tier.minLevel,
+        'NEW WEAPON \u2013 ' + tier.name, tier.minLevel >= 100 ? 2200 : 1600);
+      renderer.pushEvent(circle.ownerName, 'Lv' + tier.minLevel + ' ' + tier.name, 'max');
+    }
 
     // 順番待ちに入った。押した操作が捨てられていないことを見せます。
     listen(session, 'queued', function (queued) {

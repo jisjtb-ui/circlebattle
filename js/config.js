@@ -37,6 +37,81 @@
       bossBarMinHp: 1000
     },
 
+    /**
+     * 武器の進化。**見た目だけ**の仕組みです。
+     *
+     * HP も攻撃力も速さも半径も、ここでは 1 つも変えません。既存のレベル補正
+     * (viewers.scaling) がステータスを持っていて、ここはその「見え方」だけを
+     * 担当します。両方が強さをいじると、どちらが効いているのか分からなくなります。
+     *
+     * 武器は円の**外側**にだけ描きます (extent)。プロフィール画像は
+     * ゲームの中で一番大事な情報なので、何があっても隠しません。
+     */
+    weapons: {
+      enabled: true,
+
+      /** 武器が円の外へ出る量 (半径の倍率)。大きくすると隣の円と重なります。 */
+      extent: 1.8,
+      /**
+       * 武器の大きさ。Lv1 で minScale、Lv100 で maxScale になります。
+       *
+       * 段が変わると**形**が変わり、段の中では**大きさ**が少しずつ育ちます。
+       * レベルに対して切れ目なく上がるので、Lv19 の武器が Lv20 の武器より
+       * 大きく見える、という逆転が起きません。
+       */
+      minScale: 0.8,
+      maxScale: 1,
+      /** 見た目の半径がこれ未満の円には描かない (潰れて何も読めないため)。 */
+      minRadiusPx: 7,
+      /** 光り足しと軌跡を出す最小の見た目半径 (px)。小さい画面での負荷対策。 */
+      detailRadiusPx: 16,
+      /** 段の中でこの進み具合を超えたら軌跡が出る (Lv15/25/35… に相当)。 */
+      trailFrom: 0.5,
+
+      /**
+       * 仮の視聴者 (NPC) の武器。
+       *
+       * 色を落とし、光り足しもしません。**本物の視聴者より目立たせない**のが
+       * 目的です。誰も居ない間も盤面は動いていてほしいけれど、その円が
+       * 本物の視聴者の成果に見えてしまうと、ランキングの意味が薄れます。
+       */
+      npcColor: '#5b6472',
+      npcAlpha: 0.62,
+
+      /** この段に上がったときだけ画面中央に短い演出を出す。 */
+      milestones: [50, 100],
+
+      /** 攻撃したときのエフェクト。 */
+      attackEffects: {
+        /** 同時に出せる数。超えたら古いものから消えます。 */
+        max: 40,
+        /** 1 つが消えるまで (ミリ秒)。長いと画面が線で埋まります。 */
+        lifeMs: 220,
+        /** これより小さい円の攻撃は描かない。 */
+        minRadiusPx: 9
+      },
+
+      /**
+       * Lv1〜100 を 10 段に分けたもの。minLevel は昇順。
+       *
+       * ここに 1 行足せば段が増えます (描き方は js/weapons.js の PAINTERS に
+       * 同じ id で足します)。attack は攻撃エフェクトの種類、null なら出しません。
+       */
+      tiers: [
+        { minLevel: 1, id: 'none', name: 'NO WEAPON', color: '#94a3b8', attack: null },
+        { minLevel: 10, id: 'blade', name: 'NEON BLADE', color: '#38bdf8', attack: 'slash' },
+        { minLevel: 20, id: 'twin', name: 'TWIN BLADES', color: '#06b6d4', attack: 'twin' },
+        { minLevel: 30, id: 'spear', name: 'ENERGY SPEAR', color: '#10b981', attack: 'thrust' },
+        { minLevel: 40, id: 'axe', name: 'PLASMA AXE', color: '#f59e0b', attack: 'impact' },
+        { minLevel: 50, id: 'scythe', name: 'ENERGY SCYTHE', color: '#8b5cf6', attack: 'sweep' },
+        { minLevel: 60, id: 'chakram', name: 'TWIN CHAKRAMS', color: '#ec4899', attack: 'spin' },
+        { minLevel: 70, id: 'cannon', name: 'PLASMA CANNON', color: '#ef4444', attack: 'bolt' },
+        { minLevel: 80, id: 'wings', name: 'ENERGY WINGS', color: '#3b82f6', attack: 'wing' },
+        { minLevel: 90, id: 'orbital', name: 'ORBITAL WEAPON', color: '#a855f7', attack: 'multi' },
+        { minLevel: 100, id: 'core', name: 'LEGENDARY CORE', color: '#facc15', attack: 'core' }
+      ]
+    },
+
     /** バトルフィールド。正方形。すべての座標はこの単位で持ちます。 */
     field: {
       width: 1000,

@@ -88,6 +88,16 @@
     this._bursts = [];
     /** 「+1 KILL」のように飛ぶ短い文字。見た目だけです。 */
     this._floats = [];
+    /** 攻撃したときの短い線。使い回すので配列は伸び縮みしません。 */
+    this._attacks = [];
+
+    /**
+     * 武器の見た目。レベルだけを見て描き、ステータスには一切触りません。
+     * 絵はこのウィンドウの document で作るので、ウィンドウごとに 1 つ持ちます。
+     */
+    this.weapons = this.config.weapons
+      ? new (options.Weapons || global.CB.Weapons)({ config: this.config, doc: this.doc })
+      : null;
     this._rankingVersion = -1;
     this._rows = [];
     this._noticeTimer = null;
@@ -163,9 +173,19 @@
     for (i = 0; i < state.enemies.length; i += 1) {
       this._drawEnemy(ctx, state.enemies[i], scale);
     }
+    // 武器は円より**先に**描きます。あとから円を描けば、どんな武器でも
+    // プロフィール画像の上に来ることがありません。
+    if (this.weapons) {
+      for (i = 0; i < state.circles.length; i += 1) {
+        var armed = state.circles[i];
+        this.weapons.draw(ctx, armed, armed.position.x * scale, armed.position.y * scale,
+          armed.radius * scale, now, scale);
+      }
+    }
     for (i = 0; i < state.circles.length; i += 1) {
       this._drawCircle(ctx, state.circles[i], scale, now);
     }
+    this._drawAttacks(ctx, scale, now);
     // レベルは円を全部描いたあとに描きます。円と一緒に描くと、
     // あとから描かれた円の下に隠れて読めなくなるためです。
     for (i = 0; i < state.circles.length; i += 1) {
@@ -292,7 +312,12 @@
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.lineWidth = Math.max(2, r * 0.13);
     ctx.strokeStyle = color;
+    // 仮の視聴者 (NPC) は破線。武器も灰色にしてあるので、実際の視聴者の円と
+    // 見間違えません。誰も居ない間も盤面は動いていますが、それが本物の
+    // 視聴者の成果に見えてしまうと、ランキングの意味が薄れます。
+    if (circle.demo) ctx.setLineDash([r * 0.5, r * 0.34]);
     ctx.stroke();
+    ctx.setLineDash([]);
 
     var ratio = Math.max(0, circle.hp / circle.maxHp);
     if (ratio < 1) {
@@ -320,10 +345,14 @@
 
     // バッジは**円の中**に収めます。円の外に出すと、円が密集したときに
     // 隣の円のバッジと重なって、画面が数字で埋まってしまいます。
+    //
+    // 高さにも上限を掛けます。'MAX' は 'Lv50' より短いぶん、幅から高さを
+    // 決めると縦に大きくなり、プロフィール画像の顔をふさいでしまいます。
     var width = Math.min(r * 1.5, r * 2 * 0.92);
-    var height = width / badge.ratio;
+    var height = Math.min(width / badge.ratio, r * 0.46);
+    width = height * badge.ratio;
     var x = circle.position.x * scale - width / 2;
-    var y = circle.position.y * scale + r - height * 1.15;
+    var y = circle.position.y * scale + r - height * 1.2;
 
     ctx.drawImage(badge.canvas, x, y, width, height);
   };
@@ -475,6 +504,16 @@
     ctx.restore();
   };
 
+  /**
+   * その場に広がる閃光を 1 つ足す。武器が変わった瞬間などに使います。
+   * 撃破の閃光と同じ仕組みなので、新しく作るものはありません。
+   */
+  Renderer.prototype.flash = function (x, y, radius, color) {
+    this._bursts.push({ x: x, y: y, radius: radius, color: color, at: Date.now() });
+    if (this._bursts.length > 40) this._bursts.shift();
+    return this;
+  };
+
   Renderer.prototype._drawBursts = function (ctx, scale, now) {
     var life = 420;
     for (var i = this._bursts.length - 1; i >= 0; i -= 1) {
@@ -549,6 +588,53 @@
     });
     // 大量撃破で文字だらけになるので、古いものから捨てます
     while (this._floats.length > (this.config.ui.floatMax || 14)) this._floats.shift();
+  };
+
+  /**
+   * 攻撃したことを、円と敵が触れた場所に短く出す。
+   *
+   * 円の真ん中ではなく**接点側**に描きます。真ん中に描くと、一番大事な
+   * プロフィール画像の上に線が乗ってしまうためです。
+   *
+   * @param {object} circle 攻撃した円
+   * @param {object} target 殴られた敵
+   */
+  Renderer.prototype.attackEffect = function (circle, target) {
+    var weapons = this.weapons;
+    if (!weapons) return;
+
+    var settings = this.config.weapons.attackEffects;
+    if (circle.radius * this.scale < settings.minRadiusPx) return;
+
+    var tier = weapons.tierFor(circle.level);
+    if (!tier.attack) return;                       // Lv1〜9 は武器が無いので出しません
+
+    var dx = target.position.x - circle.position.x;
+    var dy = target.position.y - circle.position.y;
+    var length = Math.sqrt(dx * dx + dy * dy) || 1;
+
+    this._attacks.push({
+      kind: tier.attack,
+      color: circle.demo ? this.config.weapons.npcColor : tier.color,
+      // 円のふちから敵側へ少し出た位置 (プロフィール画像にかぶらない)
+      x: circle.position.x + dx / length * circle.radius * 0.95,
+      y: circle.position.y + dy / length * circle.radius * 0.95,
+      angle: Math.atan2(dy, dx),
+      radius: circle.radius,
+      at: Date.now()
+    });
+
+    // 増えすぎると画面が線で埋まるので、古いものから捨てます
+    while (this._attacks.length > settings.max) this._attacks.shift();
+  };
+
+  Renderer.prototype._drawAttacks = function (ctx, scale, now) {
+    if (!this.weapons) return;
+    for (var i = this._attacks.length - 1; i >= 0; i -= 1) {
+      if (!this.weapons.drawAttack(ctx, this._attacks[i], scale, now)) {
+        this._attacks.splice(i, 1);
+      }
+    }
   };
 
   Renderer.prototype._drawFloats = function (ctx, scale, now) {

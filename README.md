@@ -69,7 +69,7 @@ OBS では **ゲーム画面をウィンドウキャプチャ**してくださ�
 ルールのテスト:
 
 ```
-npm test     # 161 件。ブラウザ不要
+npm test     # 173 件。ブラウザ不要
 npm run check
 ```
 
@@ -142,6 +142,47 @@ MORE ROOM – STAGE 2 ×1.35
 - 押し出しはしません。育てた円が新しい円のせいで消えることはありません
 - 列は 5 つまで。それも埋まったら**列の最後の円が強くなります**（送ったぶんは無駄になりません）
 - 順番待ちがある人は、ランキングに `Lv100 +2` のように出ます
+
+### 武器が育つ
+
+**レベルが上がると、その円の武器が変わります。** 強くなるわけではありません
+（見た目だけです）。育っているかどうかが、画面を見ただけで分かるようにするためのものです。
+
+| Lv | 武器 | 見た目 |
+| --- | --- | --- |
+| 1 | – | 武器なし |
+| 10 | NEON BLADE | 小さい光る剣 |
+| 20 | TWIN BLADES | 光る剣が 2 本 |
+| 30 | ENERGY SPEAR | 長いエネルギー槍 |
+| 40 | PLASMA AXE | 大型の斧 |
+| 50 | ENERGY SCYTHE | 大型の鎌が周囲を回る |
+| 60 | TWIN CHAKRAMS | 2 つの円刃が旋回 |
+| 70 | PLASMA CANNON | 円の横に大型砲 |
+| 80 | ENERGY WINGS | 剣 + 背後のエネルギー翼 |
+| 90 | ORBITAL WEAPON | 5 つのオーブが周回 |
+| 100 | LEGENDARY CORE | コアの欠片と輪。最終形態 |
+
+10 レベルごとに**形**が変わり、その間の 1 レベルごとにも
+**大きさ・光り方・軌跡**が少しずつ育ちます（Lv15 から武器が軌跡を引きます）。
+大きさはレベルに対してまっすぐ増えるので、Lv19 の武器が Lv20 の武器より
+大きく見える、といった逆転は起きません。
+
+Lv50 と Lv100 に届いたときだけ、画面中央に短い知らせが出ます。
+
+```
+   LEVEL 50                  LEVEL 100
+NEW WEAPON – ENERGY SCYTHE   LEGENDARY CORE
+```
+
+**この間もゲームは止まりません。** 止めてしまうと、その数秒間 TikTok の
+画面では何も起きていないように見えるためです。
+
+武器は円の**外側**にだけ描き、円より先に描きます。だから、どれだけ育っても
+**プロフィール画像が武器で隠れることはありません**。
+
+攻撃したときの見え方も武器ごとに変わります（剣は斬撃、槍は突進、
+砲はエネルギー弾、といった具合です）。ただし画面が線で埋まらないよう、
+同時に出るのは 40 個まで、1 つ 0.22 秒で消えます。
 
 ### 連続撃破（コンボ）
 
@@ -578,6 +619,7 @@ TikTok Event  ->  Game Event  ->  Battle Entity  ->  Enemy  ->  Battle  ->  Lead
 | `js/avatars.js` | プロフィール画像のキャッシュ | いいえ |
 | `js/audio.js` | 効果音 (WebAudio で合成) | いいえ |
 | `js/director.js` | ウェーブと特殊イベント (敵だけを動かす) | いいえ |
+| `js/weapons.js` | レベルに応じた武器の見た目 (強さは変えない) | いいえ |
 | `js/renderer.js` | 画面 (canvas + DOM) | いいえ |
 | `js/app.js` | 上を 1 つに束ねた「ゲームの状態」。2 つの画面で共有する | いいえ |
 | `js/game-view.js` | 描画・音・演出の配線 (状態を読むだけ) | いいえ |
@@ -635,7 +677,8 @@ KAWAII VS BEAUTIFUL は今までどおり動きます。
 `js/config.js` / `js/event-router.js` (SHARE とプロフィール画像に対応した版) /
 `js/game.js` / `js/game-session.js` / `js/leaderboard.js` / `js/demo.js` /
 `js/avatars.js` / `js/audio.js` / `js/renderer.js` / `js/director.js` / `js/app.js` /
-`js/game-view.js` / `js/controls.js` / `js/control.js` / `js/main.js` / `js/game-main.js` /
+`js/game-view.js` / `js/weapons.js` / `js/controls.js` / `js/control.js` / `js/main.js` /
+`js/game-main.js` /
 `index.html` / `game.html` / `css/control.css` / `css/game.css`
 
 ### 11.3 tikhub から配信する
@@ -718,6 +761,7 @@ CB.tiktok.handleEvent({ type: 'member', user: { uniqueId: 'taro' } });   // 入�
 CB.engine.spawnEnemy('boss');      // 敵を出す
 CB.engine.spawnItem('power');      // アイテムを置く
 CB.director.trigger('swarm');      // 特殊イベントを起こす (boss / swarm / rare / elite)
+CB.renderer.weapons.tierFor(55);   // そのレベルの武器を調べる
 CB.leaderboard.setSort('kills');   // ランキングの基準を変える
 CB.app.applySettings({ sfxVolume: 0.5 });   // 音量 (ゲーム画面にも即座に届く)
 CB.reset();                        // 全部やり直す
