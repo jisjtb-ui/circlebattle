@@ -73,6 +73,8 @@
         score: 0,
         level: 0,
         maxLevel: 0,
+        /** 順番待ちの円の数 (フィールドが自分の上限で埋まっているとき)。 */
+        queued: 0,
         lastActivity: at != null ? at : this.now(),
         /** デモ視聴者かどうか。本物のイベントが来たら消せるように印を付けます。 */
         demo: Boolean(user.demo)
@@ -101,6 +103,15 @@
     if (!record) return null;
     record.level = level;
     if (level > record.maxLevel) record.maxLevel = level;
+    this._changed();
+    return record;
+  };
+
+  /** 順番待ちの円の数を記録する。 */
+  Leaderboard.prototype.setQueue = function (user, count, at) {
+    var record = this.touch(user, at);
+    if (!record || record.queued === count) return record;
+    record.queued = count;
     this._changed();
     return record;
   };

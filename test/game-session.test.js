@@ -403,3 +403,105 @@ test('100 人が LIKE を送っても、円は 1 人 1 つずつ', () => {
   assert.ok(Object.values(perUser).every((n) => n === 1), '1 人で複数の円を持っている');
   assert.strictEqual(harness.engine.circles[0].level, 15);
 });
+
+test('上限まで埋まったら、次の円は順番待ちになる (押し出さない)', () => {
+  const { engine, session, send, config } = setup();
+  const user = { id: 'u1', uniqueId: 'taro' };
+  const cap = config.viewers.limits.maxPerUser;
+
+  // 高額ギフトを連投して、最大レベルの円で埋める
+  for (let i = 0; i < cap; i += 1) send({ type: 'gift', user, diamondCount: 100 });
+  assert.strictEqual(circlesOf(engine, 'u1').length, cap);
+
+  const ids = circlesOf(engine, 'u1').map((c) => c.id);
+  send({ type: 'gift', user, diamondCount: 100 });
+
+  assert.strictEqual(circlesOf(engine, 'u1').length, cap, '上限を超えて出ている');
+  assert.deepStrictEqual(circlesOf(engine, 'u1').map((c) => c.id), ids,
+    '育っていた円が押し出された');
+  assert.strictEqual(session._player('u1').queue.length, 1, '順番待ちに積まれていない');
+});
+
+test('円が減ったら、順番待ちから次が出てくる', () => {
+  const { engine, session, send, config } = setup();
+  const user = { id: 'u1', uniqueId: 'taro' };
+  const cap = config.viewers.limits.maxPerUser;
+
+  for (let i = 0; i < cap; i += 1) send({ type: 'gift', user, diamondCount: 100 });
+  send({ type: 'gift', user, diamondCount: 30 });        // 6 個目 = 順番待ち (Lv30)
+  assert.strictEqual(session._player('u1').queue.length, 1);
+
+  // 1 つ倒れる
+  const victim = circlesOf(engine, 'u1')[0];
+  engine._damageCircle(victim, victim.hp);
+  engine._cleanup();
+
+  const mine = circlesOf(engine, 'u1');
+  assert.strictEqual(mine.length, cap, '補充されていない');
+  assert.strictEqual(mine[mine.length - 1].level, 30, '順番待ちの円が出ていない');
+  assert.strictEqual(session._player('u1').queue.length, 0, '列から減っていない');
+});
+
+test('最大レベルの円が燃え尽きても、順番待ちから次が出る', () => {
+  const { engine, session, send, advance, config } = setup();
+  const user = { id: 'u1', uniqueId: 'taro' };
+  const cap = config.viewers.limits.maxPerUser;
+
+  for (let i = 0; i < cap; i += 1) send({ type: 'gift', user, diamondCount: 100 });
+  send({ type: 'like', user, count: 100 });              // 順番待ち (Lv10)
+
+  advance(config.viewers.levels.maxDurationMs + 500, { steps: 300 });
+
+  assert.strictEqual(session._player('u1').queue.length, 0, '順番待ちが残ったまま');
+  const mine = circlesOf(engine, 'u1');
+  assert.ok(mine.length >= 1, '燃え尽きたあと 1 つも出ていない');
+  assert.ok(mine.some((c) => c.level === 10), '待っていた円が出ていない');
+});
+
+test('順番待ちの列も埋まったら、最後の円が強くなる (消えない)', () => {
+  const { session, send, config } = setup();
+  const user = { id: 'u1', uniqueId: 'taro' };
+  const cap = config.viewers.limits.maxPerUser;
+  const queue = config.viewers.limits.queue;
+
+  for (let i = 0; i < cap; i += 1) send({ type: 'gift', user, diamondCount: 100 });
+  for (let i = 0; i < queue; i += 1) send({ type: 'gift', user, diamondCount: 10 });
+
+  const list = session._player('u1').queue;
+  assert.strictEqual(list.length, queue, '列が想定より長い / 短い');
+  const lastBefore = list[list.length - 1].level;
+
+  send({ type: 'gift', user, diamondCount: 20 });        // あふれたぶん
+
+  assert.strictEqual(session._player('u1').queue.length, queue, '列が伸びている');
+  assert.strictEqual(session._player('u1').queue[queue - 1].level, lastBefore + 20,
+    'あふれたぶんが消えている');
+});
+
+test('順番待ちの数がランキングに出る', () => {
+  const { send, leaderboard, config } = setup();
+  const user = { id: 'u1', uniqueId: 'taro' };
+  const cap = config.viewers.limits.maxPerUser;
+
+  for (let i = 0; i < cap; i += 1) send({ type: 'gift', user, diamondCount: 100 });
+  assert.strictEqual(leaderboard.get('u1').queued, 0);
+
+  send({ type: 'gift', user, diamondCount: 50 });
+  send({ type: 'gift', user, diamondCount: 50 });
+  assert.strictEqual(leaderboard.get('u1').queued, 2);
+});
+
+test('他の人の円は順番待ちに影響しない', () => {
+  const { engine, session, send, config } = setup();
+  const cap = config.viewers.limits.maxPerUser;
+  const a = { id: 'a', uniqueId: 'a' };
+  const b = { id: 'b', uniqueId: 'b' };
+
+  for (let i = 0; i < cap + 2; i += 1) send({ type: 'gift', user: a, diamondCount: 100 });
+  send({ type: 'gift', user: b, diamondCount: 100 });
+
+  assert.strictEqual(circlesOf(engine, 'a').length, cap);
+  assert.strictEqual(session._player('a').queue.length, 2);
+  assert.strictEqual(circlesOf(engine, 'b').length, 1, '他人が埋まっていると出られない');
+  assert.strictEqual(session._player('b').queue.length, 0);
+});

@@ -30,7 +30,14 @@
 
     /** userId -> まだレベルになっていない LIKE の端数。 */
     this.likeBuckets = {};
-    /** userId -> { circleId, joined } いま育てている円と、入室ボーナスを渡したか。 */
+    /** userId -> user。順番待ちの円を出すときに、名前とアイコンが要ります。 */
+    this.users = {};
+    /**
+     * userId -> { circleId, joined, queue }
+     *   circleId … いま育てている円
+     *   joined   … 入室ボーナスを渡したか
+     *   queue    … 順番待ちの円 (レベルの配列)。テトリスの NEXT と同じです。
+     */
     this.players = {};
     /** 本物の視聴者イベントを受け取ったか (デモを止める判断に使う)。 */
     this.realEventSeen = false;
@@ -77,6 +84,11 @@
     });
 
     this.engine.on('enemy:killed', function (kill) { self._award(kill); });
+
+    // 円が 1 つ減ったら、その人の順番待ちから次を出します
+    this.engine.on('circle:removed', function (removed) {
+      self._releaseQueued(removed.circle.ownerId, removed.reason, self.now());
+    });
   };
 
   /**
@@ -158,7 +170,74 @@
   // ------------------------------------------------------------ レベル
 
   GameSession.prototype._player = function (userId) {
-    return this.players[userId] || (this.players[userId] = { circleId: null, joined: false });
+    return this.players[userId] ||
+      (this.players[userId] = { circleId: null, joined: false, queue: [] });
+  };
+
+  /**
+   * 円を出す。フィールドがその人の上限で埋まっていたら順番待ちに積みます。
+   *
+   * 押し出して入れ替えないのは、せっかく育てた円が新しい円のせいで消えるのを
+   * 避けるためです。列も埋まっているときは、列の最後の円を強くします
+   * (送ったぶんが消えてなくなることはありません)。
+   *
+   * @returns {object|null} 出せた円。順番待ちになった場合は null
+   */
+  GameSession.prototype._spawnOrQueue = function (user, spec) {
+    var limits = this.config.viewers.limits;
+    var player = this._player(user.id);
+
+    if (this.engine.circleCountOf(user.id) < limits.maxPerUser) {
+      return this.spawnFor(user, spec);
+    }
+
+    var max = this.config.viewers.levels.max;
+    if (player.queue.length < limits.queue) {
+      player.queue.push({ level: Math.min(spec.level, max), sourceEvent: spec.sourceEvent });
+    } else {
+      // 列も満杯。最後の円に足して強くする
+      var last = player.queue[player.queue.length - 1];
+      last.level = Math.min(last.level + spec.level, max);
+    }
+
+    this._syncQueue(user, spec.at);
+    this.emit('queued', {
+      user: user, level: spec.level, sourceEvent: spec.sourceEvent,
+      waiting: player.queue.length, at: spec.at
+    });
+    return null;
+  };
+
+  /** 順番待ちの数をランキングへ伝える (画面に「+2」と出ます)。 */
+  GameSession.prototype._syncQueue = function (user, at) {
+    if (!this.leaderboard) return;
+    this.leaderboard.setQueue(user, this._player(user.id).queue.length, at);
+  };
+
+  /**
+   * 円が減った人の列から 1 つ出す。
+   *
+   * フィールドが全体の上限で埋まって押し出された場合 ('evicted') は出しません。
+   * 出したそばからまた押し出されて、他の人の円を巻き添えにするためです。
+   */
+  GameSession.prototype._releaseQueued = function (ownerId, reason, at) {
+    if (reason === 'evicted') return null;
+
+    var player = this.players[ownerId];
+    if (!player || !player.queue.length) return null;
+    if (this.engine.circleCountOf(ownerId) >= this.config.viewers.limits.maxPerUser) return null;
+
+    var next = player.queue.shift();
+    var user = this.users[ownerId];
+    if (!user) return null;
+
+    var circle = this.spawnFor(user, {
+      level: next.level,
+      sourceEvent: next.sourceEvent,
+      at: at
+    });
+    this._syncQueue(user, at);
+    return circle;
   };
 
   /**
@@ -192,8 +271,8 @@
       return circle;
     }
 
-    // 円が無い / 上限に達している -> 新しい円を作る
-    return this.spawnFor(user, {
+    // 円が無い / 上限に達している -> 新しい円を作る (満員なら順番待ち)
+    return this._spawnOrQueue(user, {
       level: this.config.viewers.levels.restartAtActionLevel ? gained : 1,
       sourceEvent: sourceEvent,
       at: at
@@ -242,6 +321,8 @@
 
     var user = event.user;
     var at = event.at != null ? event.at : this.now();
+
+    this.users[user.id] = user;
 
     if (!user.demo && !this.realEventSeen) {
       this.realEventSeen = true;
@@ -318,7 +399,7 @@
     if (levels.joinOncePerUser && player.joined) return null;
     player.joined = true;
 
-    return this.spawnFor(user, { level: levels.join, sourceEvent: 'JOIN', at: at });
+    return this._spawnOrQueue(user, { level: levels.join, sourceEvent: 'JOIN', at: at });
   };
 
   /**
@@ -339,6 +420,7 @@
   GameSession.prototype.reset = function () {
     this.likeBuckets = {};
     this.players = {};
+    this.users = {};
     this.realEventSeen = false;
     return this;
   };

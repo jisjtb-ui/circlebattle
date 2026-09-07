@@ -357,9 +357,10 @@
 
     var ownerId = String(spec.ownerId);
 
-    // 1 人が持てる数の上限。超える場合はその人の一番古い円と入れ替えます。
-    var mine = this.circles.filter(function (c) { return c.ownerId === ownerId; });
-    if (mine.length >= limits.maxPerUser) this._removeCircle(mine[0], 'replaced');
+    // 1 人が持てる数の上限。いっぱいなら出しません (null を返します)。
+    // 押し出さないのは、育てた円が新しい円のせいで消えるのを避けるためです。
+    // 出せなかったぶんをどうするか (順番待ちにする) は game-session.js が決めます。
+    if (this.circleCountOf(ownerId) >= limits.maxPerUser) return null;
 
     // フィールド全体の上限。古いものから消します。
     while (this.circles.length >= limits.maxCircles) {
@@ -659,6 +660,15 @@
       circle.dead = true;
       this.emit('circle:removed', { circle: circle, reason: 'burnout' });
     }
+  };
+
+  /** その人がフィールドに持っている円の数。 */
+  BattleEngine.prototype.circleCountOf = function (ownerId) {
+    var count = 0;
+    for (var i = 0; i < this.circles.length; i += 1) {
+      if (this.circles[i].ownerId === ownerId) count += 1;
+    }
+    return count;
   };
 
   /** その人がいま育てている円 (最新の 1 つ)。 */

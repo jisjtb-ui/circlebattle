@@ -550,7 +550,8 @@
       }
 
       if (record.maxLevel > 0) {
-        row.level.textContent = 'Lv' + record.maxLevel;
+        // 順番待ちがあれば「Lv100 +2」のように出します
+        row.level.textContent = 'Lv' + record.maxLevel + (record.queued > 0 ? ' +' + record.queued : '');
         row.level.hidden = false;
       } else {
         row.level.hidden = true;
