@@ -101,8 +101,63 @@
     this._buildSettings();
     this._bindWindow();
     this._bindAudio();
+    this._bindBackground();
     this._bindGame();
   }
+
+  /**
+   * 盤面に敷く背景画像。
+   *
+   * 選んだ画像は blob: の URL にするだけで、どこにも送りません。
+   * ゲームウィンドウとは設定を共有しているので、選んだ瞬間に向こうへ届きます。
+   */
+  ControlPanel.prototype._bindBackground = function () {
+    var app = this.app;
+    var self = this;
+    var file = $('bg-file');
+    var clear = $('btn-bg-clear');
+    var dim = $('bg-dim');
+    var dimOut = $('bg-dim-out');
+    var name = $('bg-name');
+
+    app.onSettings(function (settings) {
+      if (dim && dim !== self.doc.activeElement) {
+        dim.value = String(Math.round(settings.backgroundDim * 100));
+      }
+      if (dimOut) dimOut.textContent = Math.round(settings.backgroundDim * 100) + '%';
+      if (name) name.textContent = settings.backgroundName || '画像なし';
+    });
+
+    if (file) {
+      file.addEventListener('change', function () {
+        var picked = file.files && file.files[0];
+        if (!picked) return;
+        if (app.settings.backgroundUrl && app.settings.backgroundUrl.indexOf('blob:') === 0) {
+          global.URL.revokeObjectURL(app.settings.backgroundUrl);
+        }
+        app.applySettings({
+          backgroundUrl: global.URL.createObjectURL(picked),
+          backgroundName: picked.name
+        });
+      });
+    }
+
+    if (clear) {
+      clear.addEventListener('click', function () {
+        if (app.settings.backgroundUrl && app.settings.backgroundUrl.indexOf('blob:') === 0) {
+          global.URL.revokeObjectURL(app.settings.backgroundUrl);
+        }
+        if (file) file.value = '';
+        app.applySettings({ backgroundUrl: null, backgroundName: null });
+      });
+    }
+
+    if (dim) {
+      dim.addEventListener('input', function () {
+        app.applySettings({ backgroundDim: Number(dim.value) / 100 });
+      });
+    }
+  };
 
   ControlPanel.prototype._buildSettings = function () {
     var doc = this.doc;

@@ -72,7 +72,12 @@
         bgmUrl: null,
         bgmName: null,
         bgmVolume: 0.4,
-        bgmPlaying: false
+        bgmPlaying: false,
+        /** 盤面に敷く 1080x1920 の画像。操作画面から選びます。 */
+        backgroundUrl: config.ui.background.url,
+        backgroundName: null,
+        /** 画像の上に重ねる暗幕の濃さ (0〜1)。 */
+        backgroundDim: config.ui.background.dim
       },
 
       _settingsListeners: [],

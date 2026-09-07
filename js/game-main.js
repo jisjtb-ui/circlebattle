@@ -28,6 +28,9 @@
       // 単独で開かれた。この画面が持ち主になります。
       var config = CB.CONFIG;
       if (params.get('demo') === '0') config.demo.enabled = false;
+      // OBS のブラウザソースから背景を指定できるようにする
+      if (params.get('bg')) config.ui.background.url = params.get('bg');
+      if (params.get('dim')) config.ui.background.dim = Number(params.get('dim'));
       app = CB.createApp({ config: config });
       global.CB.app = app;
       app.engine.start(Date.now());
@@ -40,7 +43,8 @@
       }
     }
 
-    var view = CB.createGameView(app, { doc: document, win: global }).start();
+    // 配信に映す本番の画面。盤面の縦横比をこの画面に合わせます
+    var view = CB.createGameView(app, { doc: document, win: global, primary: true }).start();
 
     // 閉じるときに購読を外す。外さないと、閉じたウィンドウの DOM を
     // 触りにいって操作画面側でエラーが出続けます。

@@ -234,26 +234,28 @@ button:hover { background: #262c5c; }
 /* ---------------------------------------------------------- プレビュー */
 
 /*
- * 操作画面のプレビューも正方形です。ここで潰すと、配信の見え方と
- * 違ってしまって設定の当たりが付けられません。
+ * 操作画面のプレビューも配信と同じ 9:16 です。ここで比を変えると、
+ * 配信の見え方と違ってしまって設定の当たりが付けられません。
  */
 .preview {
   position: relative;
-  display: grid;
-  place-items: center;
-  aspect-ratio: 1 / 1;
-  max-height: 46vh;
-  container-type: size;
+  /* 高さを決め打ちにして、その中に 9:16 を収めます。
+     grid + container-type だと高さの 100% が解決されず、はみ出します。 */
+  height: clamp(280px, 52vh, 680px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 #field {
-  width: min(100%, 100cqh);
-  aspect-ratio: 1 / 1;
+  height: 100%;
+  aspect-ratio: 9 / 16;
   max-width: 100%;
-  max-height: 100%;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: #090a18;
+  background: #04050e;
+  /* 配信画面のネオン枠を小さく再現する */
+  box-shadow: 0 0 0 2px rgba(124, 92, 255, 0.55), 0 0 26px rgba(255, 47, 185, 0.3);
 }
 
 .notice {

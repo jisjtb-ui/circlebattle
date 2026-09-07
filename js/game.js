@@ -102,6 +102,8 @@
     this.random = options.random || Math.random;
 
     this.field = { width: this.config.field.width, height: this.config.field.height };
+    /** 縦横比 (幅 ÷ 高さ)。画面の比に合わせて変えられます。 */
+    this.fieldAspect = this.field.width / this.field.height;
     /** 何段階広がっているか (0 = 元の大きさ)。 */
     this.stage = 0;
     this._stageFrom = this.field.width;
@@ -224,6 +226,24 @@
     return area / (this.field.width * this.field.height);
   };
 
+  /**
+   * フィールドの縦横比を画面に合わせる。
+   *
+   * 配信に映すゲーム画面が「自分の canvas の比」を渡します。合わせておくと、
+   * 盤面が画面いっぱいに広がり、上下や左右に隙間ができません。
+   * 幅はそのままで高さだけを変えるので、横方向の配置は動きません。
+   *
+   * @param {number} aspect 幅 ÷ 高さ
+   */
+  BattleEngine.prototype.setFieldAspect = function (aspect) {
+    if (!(aspect > 0) || !isFinite(aspect)) return this;
+    if (Math.abs(aspect - this.fieldAspect) < 0.0005) return this;
+
+    this.fieldAspect = aspect;
+    this._resizeField(this.field.width, this.field.width / aspect);
+    return this;
+  };
+
   /** その段階でのフィールドの広さ。 */
   BattleEngine.prototype.stageWidth = function (stage) {
     return this.config.field.width * Math.pow(this.config.field.expand.step, stage);
@@ -288,25 +308,30 @@
    * 全員が元の範囲に固まったままになり、外側に誰も居ない空き地ができます。
    * 半径と速さは変えないので、広いほど散らばって見えます。
    */
-  BattleEngine.prototype._resizeField = function (width) {
-    var ratio = width / this.field.width;
-    if (!isFinite(ratio) || ratio === 1) return;
+  BattleEngine.prototype._resizeField = function (width, height) {
+    var target = { width: width, height: height != null ? height : width / this.fieldAspect };
+    var wRatio = target.width / this.field.width;
+    var hRatio = target.height / this.field.height;
+    if (!isFinite(wRatio) || !isFinite(hRatio)) return;
+    if (wRatio === 1 && hRatio === 1) return;
 
-    this.field.width = width;
-    this.field.height = width;
+    this.field.width = target.width;
+    this.field.height = target.height;
 
+    // 縦と横で別々に伸ばします。まとめて 1 つの倍率にすると、画面の比に
+    // 合わせて高さだけ変えたときに、横方向まで動いて配置が崩れます。
     var i;
     for (i = 0; i < this.circles.length; i += 1) {
-      this.circles[i].position.x *= ratio;
-      this.circles[i].position.y *= ratio;
+      this.circles[i].position.x *= wRatio;
+      this.circles[i].position.y *= hRatio;
     }
     for (i = 0; i < this.enemies.length; i += 1) {
-      this.enemies[i].position.x *= ratio;
-      this.enemies[i].position.y *= ratio;
+      this.enemies[i].position.x *= wRatio;
+      this.enemies[i].position.y *= hRatio;
     }
     for (i = 0; i < this.items.length; i += 1) {
-      this.items[i].position.x *= ratio;
-      this.items[i].position.y *= ratio;
+      this.items[i].position.x *= wRatio;
+      this.items[i].position.y *= hRatio;
     }
   };
 
@@ -1457,7 +1482,7 @@
     this.circles = [];
     this.items = [];
     this.field.width = this.config.field.width;
-    this.field.height = this.config.field.height;
+    this.field.height = this.config.field.width / this.fieldAspect;
     this.stage = 0;
     this._stageAt = null;
     this._stageReadyAt = 0;

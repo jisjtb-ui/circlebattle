@@ -26,54 +26,68 @@
     <span class="rotate__sub">Turn your device upright</span>
   </div>
 
-  <header class="status">
-    <div class="status__top">
-      <span class="status__wave">WAVE <b id="wave">1</b></span>
-      <span class="status__conn" id="status" data-state="offline"><i></i><span id="status-text">…</span></span>
-      <span class="status__muted" id="muted" hidden>🔇 TAP FOR SOUND</span>
-    </div>
+  <!-- スタジアム。画面いっぱいに広がり、盤面もこの大きさになります -->
+  <canvas id="field"></canvas>
 
-    <div class="status__defeated">
-      <span class="status__label">ENEMIES DEFEATED</span>
-      <span class="status__value" id="defeated">0</span>
-    </div>
+  <!--
+    ネオンの外枠。上下左右の 4 本の帯でできています。
+    画面いっぱいの 1 枚をくり抜いて作ると、色を流すたびに画面全体を
+    塗り直すことになり、それだけで frame rate が半分以下になります。
+  -->
+  <div class="neon" aria-hidden="true">
+    <i class="neon__top"></i><i class="neon__bottom"></i>
+    <i class="neon__left"></i><i class="neon__right"></i>
+  </div>
 
-    <div class="status__meta">
-      <span>ENEMIES <b id="enemies-alive">0</b></span>
-      <span>CIRCLES <b id="circles-alive">0</b></span>
-      <span>PLAYERS <b id="players">0</b></span>
-    </div>
+  <!-- 上下の暗幕。文字を背景から浮かせるためだけのものです -->
+  <div class="scrim scrim--top" aria-hidden="true"></div>
+  <div class="scrim scrim--bottom" aria-hidden="true"></div>
 
-    <!-- 大物が居る間だけ出ます -->
-    <div class="boss" id="boss-bar" hidden>
-      <span class="boss__label" id="boss-bar-label">BOSS</span>
-      <span class="boss__track"><span class="boss__fill" id="boss-bar-fill"></span></span>
-      <span class="boss__value" id="boss-bar-value">0</span>
-    </div>
-  </header>
+  <!-- ここから下はすべて盤面の上に重なる表示 -->
+  <div class="hud">
 
-  <main class="field-wrap">
-    <canvas id="field"></canvas>
+    <header class="status">
+      <div class="status__row">
+        <span class="status__wave">WAVE <b id="wave">1</b></span>
+        <span class="status__conn" id="status" data-state="offline"><i></i><span id="status-text">…</span></span>
+        <span class="status__muted" id="muted" hidden>🔇 TAP FOR SOUND</span>
+      </div>
+      <div class="status__row status__row--big">
+        <span class="status__label">ENEMIES DEFEATED</span>
+        <span class="status__value" id="defeated">0</span>
+      </div>
+      <div class="status__row status__meta">
+        <span>ENEMIES <b id="enemies-alive">0</b></span>
+        <span>CIRCLES <b id="circles-alive">0</b></span>
+        <span>PLAYERS <b id="players">0</b></span>
+      </div>
+      <!-- 大物が居る間だけ出ます -->
+      <div class="boss" id="boss-bar" hidden>
+        <span class="boss__label" id="boss-bar-label">BOSS</span>
+        <span class="boss__track"><span class="boss__fill" id="boss-bar-fill"></span></span>
+        <span class="boss__value" id="boss-bar-value">0</span>
+      </div>
+    </header>
+
+    <!-- 画面の左に重ねる TOP 5。盤面が透けて見える濃さにしてあります -->
+    <section class="ranking">
+      <h2 class="ranking__title">
+        TOP 5
+        <span class="ranking__metric" id="ranking-metric">SCORE</span>
+      </h2>
+      <ol class="ranking__list" id="ranking-list"></ol>
+      <p class="ranking__empty" id="ranking-empty">LIKE / FOLLOW / SHARE / GIFT</p>
+      <p class="ranking__self" id="self-rank" hidden></p>
+    </section>
+
     <div class="notice" id="notice" hidden></div>
     <div class="stage-banner" id="stage-banner" hidden>
       <span class="stage-banner__main" id="stage-banner-main">STAGE EXPANDED</span>
       <span class="stage-banner__sub" id="stage-banner-sub"></span>
     </div>
-  </main>
 
-  <section class="ranking">
-    <h2 class="ranking__title">
-      TOP 10 PLAYER
-      <span class="ranking__metric" id="ranking-metric">SCORE</span>
-    </h2>
-    <ol class="ranking__list" id="ranking-list"></ol>
-    <!-- 中身は config から作られます (設定を変えれば説明も変わります) -->
-    <p class="ranking__empty" id="ranking-empty">LIKE / FOLLOW / SHARE / GIFT で参加</p>
-    <!-- TOP10 の外に居る人の順位。誰も居なければ出ません -->
-    <p class="ranking__self" id="self-rank" hidden></p>
-  </section>
-
-  <ul class="events" id="event-feed"></ul>
+    <ul class="events" id="event-feed"></ul>
+  </div>
 </div>
 
 <script src="js/config.js"></script>

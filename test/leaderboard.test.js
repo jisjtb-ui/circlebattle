@@ -41,14 +41,15 @@ test('初期設定は score の降順', () => {
   assert.deepStrictEqual(lb.top().map((r) => r.userName), ['b', 'c', 'a']);
 });
 
-test('11 位以下は返さない', () => {
+test('決めた人数より下は返さない', () => {
   const lb = board();
+  const size = makeConfig().ranking.size;
   for (let i = 1; i <= 25; i += 1) lb.addKill(user('p' + i), i);
 
   const top = lb.top();
-  assert.strictEqual(top.length, 10);
+  assert.strictEqual(top.length, size);
   assert.strictEqual(top[0].userName, 'p25');
-  assert.strictEqual(top[9].userName, 'p16');
+  assert.strictEqual(top[size - 1].userName, 'p' + (26 - size));
 });
 
 test('kills / damage でも並べ替えられる', () => {

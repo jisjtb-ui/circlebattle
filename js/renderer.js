@@ -45,6 +45,15 @@
     this.leaderboard = options.leaderboard || null;
     this.avatars = options.avatars || null;
 
+    /**
+     * 配信に映す本番の画面かどうか。
+     * true のときだけ、盤面の縦横比を自分の canvas に合わせます。
+     */
+    this.primary = Boolean(options.primary);
+    /** 盤面を中央に寄せるためのずれ (px)。primary では 0。 */
+    this.originX = 0;
+    this.originY = 0;
+
     /** 描き込む先のウィンドウ。省略するとこのページ。 */
     this.doc = options.doc || document;
     this.win = options.win || this.doc.defaultView || global;
@@ -138,18 +147,33 @@
     var dpr = this.win.devicePixelRatio || 1;
     if (!rect.width || !rect.height) return;
 
-    if (rect.width !== this._cssWidth || rect.height !== this._cssHeight ||
-        canvas.width !== Math.round(rect.width * dpr)) {
+    var resized = rect.width !== this._cssWidth || rect.height !== this._cssHeight ||
+                  canvas.width !== Math.round(rect.width * dpr);
+    if (resized) {
       this._cssWidth = rect.width;
       this._cssHeight = rect.height;
       canvas.width = Math.round(rect.width * dpr);
       canvas.height = Math.round(rect.height * dpr);
-      this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
-    // フィールドは正方形なので、短いほうに合わせれば歪みません。
-    this.scale = Math.min(rect.width / this.engine.field.width,
-                          rect.height / this.engine.field.height);
+    /*
+     * 配信に映す画面 (primary) では、**盤面を画面の比に合わせます**。
+     * 合わせないと上下か左右に隙間ができて「画面一面がスタジアム」になりません。
+     * 操作画面のプレビューは合わせません (小さい窓の比に盤面が引きずられると、
+     * 配信の見え方と違ってしまうため)。
+     */
+    if (this.primary && this.engine.setFieldAspect) {
+      this.engine.setFieldAspect(rect.width / rect.height);
+    }
+
+    var field = this.engine.field;
+    this.scale = Math.min(rect.width / field.width, rect.height / field.height);
+
+    // 盤面が画面より小さいときは中央に置きます (プレビュー用)。
+    // ずらしたぶんは transform に入れるので、描く側は気にしなくて済みます。
+    this.originX = (rect.width - field.width * this.scale) / 2;
+    this.originY = (rect.height - field.height * this.scale) / 2;
+    this.ctx.setTransform(dpr, 0, 0, dpr, this.originX * dpr, this.originY * dpr);
   };
 
   Renderer.prototype.draw = function (now) {
@@ -158,8 +182,8 @@
 
     var ctx = this.ctx;
     var scale = this.scale;
-    var w = this._cssWidth;
-    var h = this._cssHeight;
+    var w = this.engine.field.width * scale;
+    var h = this.engine.field.height * scale;
 
     this._drawBackground(ctx, w, h);      // 不透明なので clearRect は要りません
 
@@ -210,7 +234,11 @@
    * 下地は不透明なので、貼れば前のフレームも消えます (clearRect が要りません)。
    */
   Renderer.prototype._drawBackground = function (ctx, w, h) {
-    if (!this._bg || this._bgWidth !== w || this._bgHeight !== h) {
+    var settings = this.config.ui.background || {};
+    var image = this._bgImage;
+    var key = (image ? image.src : '') + ':' + settings.dim;
+
+    if (!this._bg || this._bgWidth !== w || this._bgHeight !== h || this._bgKey !== key) {
       var canvas = this.doc.createElement('canvas');
       var dpr = this.win.devicePixelRatio || 1;
       canvas.width = Math.round(w * dpr);
@@ -218,27 +246,83 @@
       var bg = canvas.getContext('2d');
       bg.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-      bg.fillStyle = '#090a18';
+      bg.fillStyle = settings.color || '#090a18';
       bg.fillRect(0, 0, w, h);
 
-      bg.strokeStyle = 'rgba(120, 140, 255, 0.10)';
-      bg.lineWidth = 1;
-      var step = w / 10;
-      for (var i = 1; i < 10; i += 1) {
-        bg.beginPath();
-        bg.moveTo(i * step, 0);
-        bg.lineTo(i * step, h);
-        bg.moveTo(0, i * step);
-        bg.lineTo(w, i * step);
-        bg.stroke();
+      if (image) {
+        // 1080x1920 の絵をフィールドいっぱいに敷きます。座標は 1 対 1 なので、
+        // 絵の中の位置がそのまま盤面の位置になります。
+        bg.drawImage(image, 0, 0, w, h);
+        // 円と敵を見やすくするための暗幕。濃さは config で変えられます。
+        if (settings.dim > 0) {
+          bg.fillStyle = 'rgba(4, 5, 14, ' + settings.dim + ')';
+          bg.fillRect(0, 0, w, h);
+        }
+      } else {
+        bg.strokeStyle = 'rgba(120, 140, 255, 0.10)';
+        bg.lineWidth = 1;
+        var step = w / 10;
+        for (var i = 1; i * step < h; i += 1) {
+          bg.beginPath();
+          bg.moveTo(0, i * step);
+          bg.lineTo(w, i * step);
+          bg.stroke();
+        }
+        for (var k = 1; k < 10; k += 1) {
+          bg.beginPath();
+          bg.moveTo(k * step, 0);
+          bg.lineTo(k * step, h);
+          bg.stroke();
+        }
       }
 
       this._bg = canvas;
       this._bgWidth = w;
       this._bgHeight = h;
+      this._bgKey = key;
+    }
+
+    // 盤面が画面より小さいとき、外側に前のフレームが残らないように塗ります
+    if (this.originX > 0.5 || this.originY > 0.5) {
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = '#04050e';
+      ctx.fillRect(0, 0, this.el.canvas.width, this.el.canvas.height);
+      ctx.restore();
     }
 
     ctx.drawImage(this._bg, 0, 0, w, h);
+  };
+
+  /**
+   * 盤面の背景に画像を敷く。
+   *
+   * 1080x1920 で作ると、絵の座標とフィールドの座標がそのまま一致します。
+   * 読み込みに失敗しても既定の下地に戻るだけで、ゲームは止まりません。
+   *
+   * @param {string|null} url null で既定の下地に戻します
+   */
+  Renderer.prototype.setBackground = function (url) {
+    if (!url) {
+      this._bgImage = null;
+      this._bg = null;
+      return this;
+    }
+    if (this._bgImage && this._bgImage.src === url) return this;
+
+    var self = this;
+    var image = new this.win.Image();
+    image.onload = function () {
+      self._bgImage = image;
+      self._bg = null;                  // 作り直させる
+    };
+    image.onerror = function () {
+      console.warn('[CB] 背景画像を読み込めませんでした:', url);
+      self._bgImage = null;
+      self._bg = null;
+    };
+    image.src = url;
+    return this;
   };
 
   Renderer.prototype._drawEnemy = function (ctx, enemy, scale) {
@@ -696,7 +780,12 @@
       ctx.textBaseline = 'middle';
       ctx.lineWidth = 3.5;
       ctx.strokeStyle = 'rgba(0,0,0,0.8)';
-      var x = item.x * scale;
+
+      // 端で切れないように、画面の中へ寄せます。端で起きたことほど
+      // 見逃されやすいので、切って読めなくするのは避けます。
+      var half = ctx.measureText(item.text).width / 2 + px * 0.2;
+      var limit = this.engine.field.width * scale;
+      var x = Math.max(half, Math.min(item.x * scale, limit - half));
       var y = item.y * scale - t * px * 1.6;            // ゆっくり上へ
       ctx.strokeText(item.text, x, y);
       ctx.fillStyle = item.color;
@@ -771,7 +860,7 @@
   Renderer.prototype._buildRanking = function () {
     var list = this.el.rankingList;
     if (!list) return;
-    var size = this.config.ui.rankingSize;
+    var size = this.config.ranking.size;
 
     list.innerHTML = '';
     this._rows = [];
@@ -865,7 +954,9 @@
       var value = metric === 'kills' ? record.kills
         : metric === 'damage' ? Math.round(record.damage)
           : Math.round(record.score);
-      row.value.textContent = value.toLocaleString() + ' ' + (metric === 'kills' ? 'KILLS' : metric.toUpperCase());
+      // 数字だけにします。何の数字かは見出し (TOP 5 … SCORE) に出ているので、
+      // 1 行ごとに繰り返すと、その幅のぶん名前が削られて読めなくなります。
+      row.value.textContent = value.toLocaleString();
     }
   };
 

@@ -5,38 +5,47 @@
  * 430×932 まで幅があるので、寸法はすべて clamp() で「最小値つきの伸縮」に
  * してあります。どれだけ狭くても読めなくならないのが目的です。
  *
- * 決めごと:
- *   - 横スクロールも縦スクロールもさせない (overflow:hidden + 1 画面に収める)
- *   - フィールドは常に正方形。潰さない・引き伸ばさない
- *   - TOP 10 は常に 10 行ぶんの場所を確保する (増減で他が動かない)
- *   - 高さは 100dvh。100vh だとスマホのアドレスバーぶん下が切れます
- *   - 右端と下端は TikTok の UI (ボタン列・コメント欄) と重なるので少し空ける
- *   - 見る専用。タップしても何も起きません
+ * 作りは「**画面いっぱいのスタジアム + その上に重なる表示**」です。
+ * 盤面 (canvas) が画面を丸ごと覆い、ステータス・TOP 5・イベントは
+ * その上に浮かせます。盤面を区切って並べると、狭い端末ほど
+ * 肝心のスタジアムが小さくなってしまうためです。
  *
- * 優先順位は フィールド > ステータス > TOP10 > イベント です。
- * 狭いときに削るのは下から。フィールドは最後まで残します。
+ * 決めごと:
+ *   - 横スクロールも縦スクロールもさせない (overflow:hidden + 1 画面)
+ *   - 盤面は画面と同じ比。engine 側も同じ比に合わせるので隙間ができない
+ *   - 重ねる表示は**盤面が透けて見える濃さ**にする (視認性はそこそこ)
+ *   - TOP 5 は左。右端は TikTok のボタン列と重なるので空ける
+ *   - 高さは 100dvh。100vh だとスマホのアドレスバーぶん下が切れます
+ *   - 見る専用。タップしても何も起きません
  */
 
 :root {
-  --bg: #070714;
-  --bg-panel: rgba(18, 20, 44, 0.82);
+  --bg: #04050e;
   --line: rgba(120, 140, 255, 0.22);
   --text: #eef1ff;
-  --muted: #97a0c8;
+  --muted: #aab3d8;
   --accent: #5eead4;
 
-  --gap: clamp(5px, 1.1dvh, 14px);
+  /* 重ねる表示の下地。濃くすると盤面が見えなくなります */
+  --panel: rgba(6, 8, 22, 0.5);
+  --panel-line: rgba(255, 255, 255, 0.12);
 
-  /* 画面のふち。TikTok の UI ぶんを右と下に少しだけ足します。 */
-  --pad-top: calc(env(safe-area-inset-top, 0px) + clamp(6px, 1.2dvh, 18px));
-  --pad-left: calc(env(safe-area-inset-left, 0px) + clamp(8px, 2.5vw, 26px));
-  --pad-right: calc(env(safe-area-inset-right, 0px) + clamp(10px, 4vw, 40px));
-  --pad-bottom: calc(env(safe-area-inset-bottom, 0px) + clamp(10px, 2.4dvh, 34px));
+  /* ネオンの外枠 */
+  --neon-1: #ff2fb9;
+  --neon-2: #7c5cff;
+  --neon-3: #22d3ee;
+  --neon-4: #ffd60a;
+  --neon-width: clamp(4px, 1vw, 13px);
+
+  /* 画面のふち。右下は TikTok の UI と重なるので多めに空けます */
+  --pad-top: calc(env(safe-area-inset-top, 0px) + clamp(8px, 1.4dvh, 22px));
+  --pad-left: calc(env(safe-area-inset-left, 0px) + clamp(10px, 3vw, 30px));
+  --pad-right: calc(env(safe-area-inset-right, 0px) + clamp(12px, 5vw, 48px));
+  --pad-bottom: calc(env(safe-area-inset-bottom, 0px) + clamp(12px, 3dvh, 40px));
 }
 
 * { box-sizing: border-box; }
 
-/* display を持つ要素にも hidden 属性を効かせる (ランキングの空行など) */
 [hidden] { display: none !important; }
 
 html, body {
@@ -53,39 +62,175 @@ html, body {
   overscroll-behavior: none;
 }
 
-body {
-  background-image:
-    radial-gradient(900px 600px at 20% -10%, rgba(94, 234, 212, 0.10), transparent 60%),
-    radial-gradient(900px 600px at 90% 110%, rgba(244, 114, 182, 0.12), transparent 60%);
-}
-
 /*
  * 100dvh を使います。100vh はアドレスバーが出ている間の高さを含まないので、
  * スマホだと下のイベント行が画面外へ落ちます。
  */
 .game {
+  position: relative;
+  width: 100vw;
   height: 100dvh;
+  overflow: hidden;
+}
+
+/* -------------------------------------------------------- スタジアム */
+
+/*
+ * 盤面は画面を丸ごと覆います。engine 側の縦横比もこの canvas に合わせるので
+ * (renderer の primary)、切れる部分も余る部分もありません。
+ */
+#field {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/*
+ * ネオンの外枠。線を引くだけなので、盤面の描画には一切影響しません。
+ * 流れる色は background-position だけを動かします (再描画が要らないため)。
+ */
+/*
+ * 枠の内側ににじむ光。動かないので、1 回塗れば以降はただ重ねるだけです。
+ */
+.game::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  box-shadow:
+    inset 0 0 clamp(16px, 3.4vw, 40px) rgba(124, 92, 255, 0.7),
+    inset 0 0 clamp(44px, 9vw, 110px) rgba(255, 47, 185, 0.32);
+}
+
+/*
+ * ネオンの外枠。
+ *
+ * 4 本の細い帯です。画面いっぱいの 1 枚を mask でくり抜いて作ると、
+ * 色を流すたびに画面全体 (1080x1920 = 200 万画素) を塗り直すことになり、
+ * **それだけで frame rate が半分以下になります** (実測 54fps → 22fps)。
+ * 帯なら塗り直すのは 8 万画素ほどで、目に見えるコストはありません。
+ */
+.neon {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  filter: saturate(1.3) brightness(1.12);
+}
+
+.neon i {
+  position: absolute;
+  background-image: linear-gradient(90deg,
+    var(--neon-1), var(--neon-2), var(--neon-3), var(--neon-4),
+    var(--neon-3), var(--neon-2), var(--neon-1));
+  animation: neon-flow 9s linear infinite;
+}
+
+.neon__top, .neon__bottom {
+  left: 0;
+  right: 0;
+  height: var(--neon-width);
+  background-size: 300% 100%;
+}
+
+.neon__top { top: 0; }
+.neon__bottom { bottom: 0; animation-direction: reverse; }
+
+.neon__left, .neon__right {
+  top: 0;
+  bottom: 0;
+  width: var(--neon-width);
+  background-image: linear-gradient(180deg,
+    var(--neon-2), var(--neon-3), var(--neon-4), var(--neon-1), var(--neon-2));
+  background-size: 100% 300%;
+  animation-name: neon-flow-y;
+}
+
+.neon__left { left: 0; }
+.neon__right { right: 0; animation-direction: reverse; }
+
+@keyframes neon-flow {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 300% 50%; }
+}
+
+@keyframes neon-flow-y {
+  0% { background-position: 50% 0%; }
+  100% { background-position: 50% 300%; }
+}
+
+/*
+ * 上下の暗幕。スタジアムの絵は明るい場所も暗い場所もあるので、これが無いと
+ * 「ENEMIES DEFEATED」が背景に溶けて読めません。中央は素通しなので、
+ * 盤面が隠れることはありません。**必要な帯だけ**の大きさにしてあります
+ * (画面いっぱいの 1 枚にすると、そのぶん毎フレーム重ねる面積が増えます)。
+ */
+.scrim {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.scrim--top {
+  top: 0;
+  height: 22%;
+  background: linear-gradient(180deg, rgba(4, 5, 14, 0.72), rgba(4, 5, 14, 0));
+}
+
+.scrim--bottom {
+  bottom: 0;
+  height: 14%;
+  background: linear-gradient(0deg, rgba(4, 5, 14, 0.6), rgba(4, 5, 14, 0));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .neon i { animation: none; }
+}
+
+/* ------------------------------------------------ 盤面の上に重ねる表示 */
+
+.hud {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
   display: grid;
-  /* ステータス / フィールド / TOP10 / イベント */
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
-  gap: var(--gap);
+  /* ステータス / 中央のあき / イベント */
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(6px, 1.2dvh, 16px);
   padding: var(--pad-top) var(--pad-right) var(--pad-bottom) var(--pad-left);
+  pointer-events: none;
 }
 
 /* ---------------------------------------------------------- ステータス */
 
-.status { display: grid; gap: clamp(2px, 0.4dvh, 6px); }
+.status {
+  position: relative;
+  display: grid;
+  gap: clamp(2px, 0.4dvh, 6px);
+  justify-items: start;
+}
 
-.status__top {
+.status__row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: clamp(6px, 2vw, 14px);
+  max-width: 100%;
   min-width: 0;
 }
 
+.status__row--big { align-items: baseline; gap: clamp(6px, 2vw, 12px); }
+
+/* 盤面の上に出す文字は、影で必ず読めるようにします */
+.status span, .status b { text-shadow: 0 2px 10px rgba(0, 0, 0, 0.85); }
+
 .status__wave {
-  font-size: clamp(10px, 1.6dvh, 18px);
+  font-size: clamp(11px, 1.7dvh, 20px);
   letter-spacing: 0.24em;
   font-weight: 800;
   color: var(--accent);
@@ -128,30 +273,27 @@ body {
   padding: 2px 8px;
   border-radius: 999px;
   border: 1px solid rgba(250, 204, 21, 0.5);
-  background: rgba(250, 204, 21, 0.12);
+  background: rgba(250, 204, 21, 0.14);
   color: #fde68a;
   font-size: clamp(9px, 1.1dvh, 12px);
   white-space: nowrap;
 }
 
-.status__defeated { display: grid; line-height: 1.02; }
-
 .status__label {
   font-size: clamp(8px, 1.1dvh, 13px);
-  letter-spacing: 0.28em;
+  letter-spacing: 0.26em;
   color: var(--muted);
 }
 
 .status__value {
-  font-size: clamp(26px, 5.2dvh, 76px);
+  font-size: clamp(24px, 4.4dvh, 64px);
   font-weight: 900;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 22px rgba(94, 234, 212, 0.45);
+  text-shadow: 0 0 24px rgba(94, 234, 212, 0.55), 0 2px 10px rgba(0, 0, 0, 0.9);
 }
 
 .status__meta {
-  display: flex;
-  gap: clamp(8px, 3vw, 22px);
   font-size: clamp(8px, 1.1dvh, 13px);
   letter-spacing: 0.14em;
   color: var(--muted);
@@ -163,12 +305,12 @@ body {
 .boss {
   --color: #f472b6;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(60px, 40vw) auto;
   align-items: center;
   gap: 8px;
-  padding: 3px 8px;
+  padding: 3px 10px;
   border-radius: 999px;
-  background: rgba(10, 12, 30, 0.75);
+  background: rgba(6, 8, 22, 0.55);
   border: 1px solid color-mix(in srgb, var(--color) 55%, transparent);
 }
 
@@ -185,7 +327,7 @@ body {
 .boss__track {
   height: clamp(5px, 0.8dvh, 10px);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.16);
   overflow: hidden;
 }
 
@@ -199,116 +341,24 @@ body {
   transition: width 160ms linear;
 }
 
-/* -------------------------------------------------------- フィールド */
-
-.field-wrap {
-  position: relative;
-  min-height: 0;
-  display: grid;
-  place-items: center;
-  /* 下の 100cqh (この枠の高さ) を使うために必要 */
-  container-type: size;
-}
+/* ------------------------------------------------------------ TOP 5 */
 
 /*
- * フィールドは常に正方形。短い辺に合わせるので、どの端末でも歪みません。
- * 物理は時間で進むため、ここで大きさが変わってもゲームの速さは変わりません。
- */
-#field {
-  width: min(100%, 100cqh);
-  aspect-ratio: 1 / 1;
-  max-width: 100%;
-  max-height: 100%;
-  border: 1px solid var(--line);
-  border-radius: clamp(8px, 1.6vw, 18px);
-  box-shadow: 0 0 60px rgba(80, 120, 255, 0.16) inset;
-  background: #090a18;
-}
-
-.notice {
-  position: absolute;
-  top: 8px;
-  left: 50%;
-  max-width: 92%;
-  transform: translateX(-50%);
-  padding: 4px 14px;
-  border-radius: 999px;
-  background: rgba(10, 12, 30, 0.9);
-  border: 1px solid var(--line);
-  font-size: clamp(10px, 1.4dvh, 16px);
-  letter-spacing: 0.08em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.notice--in { animation: notice-in 240ms ease-out; }
-
-.stage-banner {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  display: grid;
-  justify-items: center;
-  gap: 4px;
-  max-width: 94%;
-  padding: clamp(8px, 1.6dvh, 18px) clamp(16px, 6vw, 42px);
-  border-radius: 16px;
-  background: rgba(6, 8, 20, 0.92);
-  border: 1px solid rgba(94, 234, 212, 0.55);
-  box-shadow: 0 0 50px rgba(94, 234, 212, 0.25);
-  text-align: center;
-  pointer-events: none;
-}
-
-.stage-banner__main {
-  font-size: clamp(18px, 3.4dvh, 52px);
-  font-weight: 900;
-  letter-spacing: 0.14em;
-  color: var(--accent);
-  text-shadow: 0 0 26px rgba(94, 234, 212, 0.5);
-  white-space: nowrap;
-}
-
-.stage-banner__sub {
-  font-size: clamp(8px, 1.3dvh, 16px);
-  letter-spacing: 0.26em;
-  color: var(--muted);
-  white-space: nowrap;
-}
-
-.stage-banner--in { animation: stage-pop 2000ms ease-out forwards; }
-
-@keyframes stage-pop {
-  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.82); }
-  12%  { opacity: 1; transform: translate(-50%, -50%) scale(1.04); }
-  20%  { transform: translate(-50%, -50%) scale(1); }
-  75%  { opacity: 1; }
-  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.06); }
-}
-
-@keyframes notice-in {
-  from { opacity: 0; transform: translate(-50%, -8px); }
-  to   { opacity: 1; transform: translate(-50%, 0); }
-}
-
-/* ----------------------------------------------------------- TOP 10 */
-
-/*
- * 10 行ぶんの高さを always 確保します。人が増えるたびに枠が伸びると、
- * フィールドの大きさまで動いて配信が落ち着きません。
+ * 画面の左に重ねます。**盤面が透けて見える濃さ**にしてあります。
+ * 濃くすると読みやすい代わりに、その下で戦っている円が見えなくなります。
  */
 .ranking {
+  position: relative;
+  grid-row: 2;
+  align-self: start;
+  justify-self: start;
+  width: clamp(168px, 48vw, 400px);
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: 4px;
-  height: clamp(162px, 25dvh, 460px);
-  padding: clamp(5px, 0.9dvh, 12px) clamp(6px, 2vw, 14px);
-  background: var(--bg-panel);
-  border: 1px solid var(--line);
+  gap: 3px;
+  padding: clamp(5px, 0.9dvh, 12px) clamp(7px, 2vw, 14px);
   border-radius: 12px;
-  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--panel-line);
 }
 
 .ranking__title {
@@ -317,13 +367,14 @@ body {
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-  font-size: clamp(10px, 1.5dvh, 18px);
+  font-size: clamp(10px, 1.4dvh, 17px);
   letter-spacing: 0.2em;
   font-weight: 800;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
 }
 
 .ranking__metric {
-  font-size: clamp(8px, 1.1dvh, 12px);
+  font-size: clamp(8px, 1dvh, 12px);
   letter-spacing: 0.14em;
   color: var(--accent);
 }
@@ -333,30 +384,26 @@ body {
   margin: 0;
   padding: 0;
   display: grid;
-  /* 10 行を等分。行が足りなくても はみ出しません。 */
-  grid-template-rows: repeat(10, minmax(0, 1fr));
+  /* config.ui.rankingSize と揃えてあります (5 行) */
+  grid-template-rows: repeat(5, minmax(0, 1fr));
   gap: 2px;
-  min-height: 0;
+  height: clamp(78px, 13dvh, 210px);
   overflow: hidden;
-  /*
-   * 中の文字とアイコンを「1 行の高さ」から決めます (下の cqh)。
-   * 画面の高さから決めると、狭い端末でアイコンが行からはみ出して
-   * 頭が切れます。行に合わせておけば、どの端末でも必ず収まります。
-   */
   container-type: size;
 }
 
 .rank {
   --hue: 200;
   display: grid;
-  grid-template-columns: 2.2ch auto minmax(0, 1fr) auto auto;
+  grid-template-columns: 1.4ch auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: clamp(4px, 1.6vw, 10px);
+  gap: clamp(4px, 1.4vw, 9px);
   padding: 0 5px;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.035);
-  font-size: clamp(8px, 5.4cqh, 16px);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: clamp(9px, 15cqh, 16px);
   min-width: 0;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
   animation: rank-in 220ms ease-out;
 }
 
@@ -365,9 +412,9 @@ body {
   to   { opacity: 1; transform: none; }
 }
 
-.rank:nth-child(1) { background: rgba(250, 204, 21, 0.16); }
-.rank:nth-child(2) { background: rgba(226, 232, 240, 0.13); }
-.rank:nth-child(3) { background: rgba(217, 119, 6, 0.14); }
+.rank:nth-child(1) { background: rgba(250, 204, 21, 0.22); }
+.rank:nth-child(2) { background: rgba(226, 232, 240, 0.16); }
+.rank:nth-child(3) { background: rgba(217, 119, 6, 0.18); }
 
 .rank__no {
   color: var(--muted);
@@ -378,8 +425,8 @@ body {
 /* アイコンは小さくても「自分だ」と分かる大きさを保ちます。 */
 .rank__avatar {
   position: relative;
-  width: clamp(10px, 7.4cqh, 34px);
-  height: clamp(10px, 7.4cqh, 34px);
+  width: clamp(12px, 17cqh, 32px);
+  height: clamp(12px, 17cqh, 32px);
   border-radius: 50%;
   overflow: hidden;
   display: grid;
@@ -404,16 +451,8 @@ body {
   white-space: nowrap;
 }
 
-.rank__level {
-  font-variant-numeric: tabular-nums;
-  font-size: 0.82em;
-  font-weight: 700;
-  color: #fde68a;
-  background: rgba(250, 204, 21, 0.14);
-  border-radius: 5px;
-  padding: 0 5px;
-  white-space: nowrap;
-}
+/* 狭いので、レベルは値と一緒に出さず隠します (順位と名前とスコアを優先) */
+.rank__level { display: none; }
 
 .rank__value {
   font-variant-numeric: tabular-nums;
@@ -423,43 +462,116 @@ body {
 }
 
 .ranking__empty {
-  margin: auto 0;
+  margin: 0;
   text-align: center;
   color: var(--muted);
-  font-size: clamp(9px, 1.2dvh, 14px);
-  line-height: 1.8;
-  /* 説明は狭い画面では折り返します (切れると読めないため) */
-  text-wrap: balance;
+  font-size: clamp(8px, 1dvh, 12px);
+  line-height: 1.6;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
 }
 
-/* TOP10 の外に居る人の順位。追いかける目標が無いと、そこで見るのをやめます。 */
+/* TOP5 の外に居る人の順位。追いかける目標が無いと、そこで見るのをやめます。 */
 .ranking__self {
   margin: 0;
   padding-top: 3px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--panel-line);
   text-align: center;
-  font-size: clamp(9px, 1.2dvh, 14px);
+  font-size: clamp(8px, 1.05dvh, 13px);
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   color: #fbbf24;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
+}
+
+/* ------------------------------------------------------- 中央の知らせ */
+
+.notice {
+  position: absolute;
+  top: clamp(10px, 2dvh, 26px);
+  left: 50%;
+  max-width: 84%;
+  transform: translateX(-50%);
+  padding: 4px 14px;
+  border-radius: 999px;
+  background: rgba(6, 8, 22, 0.72);
+  border: 1px solid var(--panel-line);
+  font-size: clamp(10px, 1.4dvh, 16px);
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notice--in { animation: notice-in 240ms ease-out; }
+
+.stage-banner {
+  position: absolute;
+  top: 46%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  max-width: 92%;
+  padding: clamp(8px, 1.6dvh, 18px) clamp(16px, 6vw, 42px);
+  border-radius: 16px;
+  background: rgba(4, 6, 18, 0.82);
+  border: 1px solid rgba(94, 234, 212, 0.55);
+  box-shadow: 0 0 50px rgba(94, 234, 212, 0.3);
+  text-align: center;
+  pointer-events: none;
+}
+
+.stage-banner__main {
+  font-size: clamp(18px, 3.2dvh, 50px);
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+  text-shadow: 0 0 26px rgba(94, 234, 212, 0.55);
+  white-space: nowrap;
+}
+
+.stage-banner__sub {
+  font-size: clamp(8px, 1.25dvh, 16px);
+  letter-spacing: 0.22em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.stage-banner--in { animation: stage-pop 2000ms ease-out forwards; }
+
+@keyframes stage-pop {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.82); }
+  12%  { opacity: 1; transform: translate(-50%, -50%) scale(1.04); }
+  20%  { transform: translate(-50%, -50%) scale(1); }
+  75%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.06); }
+}
+
+@keyframes notice-in {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
 }
 
 /* --------------------------------------------------------- LIVE EVENT */
 
 /*
  * 数行だけ。放っておくと消えます。ここを増やすと文字の壁になり、
- * 肝心のフィールドから目が離れます。
+ * 肝心のスタジアムから目が離れます。
  */
 .events {
+  position: relative;
+  grid-row: 3;
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
   gap: 2px;
   align-content: end;
+  justify-items: start;
   /* config.ui.eventLines と揃えてあります (3 行) */
   min-height: calc(3 * clamp(13px, 1.9dvh, 24px));
 }
@@ -469,13 +581,15 @@ body {
   grid-template-columns: minmax(0, auto) minmax(0, 1fr);
   align-items: baseline;
   gap: 6px;
+  max-width: 100%;
   height: clamp(13px, 1.9dvh, 24px);
-  padding: 0 8px;
+  padding: 0 9px;
   border-radius: 5px;
-  background: rgba(10, 12, 30, 0.6);
+  background: rgba(6, 8, 22, 0.55);
   border-left: 3px solid var(--muted);
   font-size: clamp(9px, 1.2dvh, 14px);
   line-height: clamp(13px, 1.9dvh, 24px);
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
   animation: event-in 200ms ease-out;
 }
 
@@ -515,16 +629,16 @@ body {
 .rotate { display: none; }
 
 @media (orientation: landscape) and (max-height: 560px) {
-  .game > *:not(.rotate) { display: none; }
+  /* #field は id 指定なので、!important が無いと優先度で負けます */
+  .game > *:not(.rotate) { display: none !important; }
 
   .rotate {
+    position: absolute;
+    inset: 0;
     display: grid;
     place-content: center;
     justify-items: center;
     gap: 8px;
-    grid-column: 1;
-    grid-row: 1 / -1;
-    height: 100dvh;
     text-align: center;
   }
 

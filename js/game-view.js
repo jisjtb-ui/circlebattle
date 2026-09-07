@@ -54,7 +54,8 @@
       leaderboard: app.leaderboard,
       avatars: app.avatars,
       doc: doc,
-      win: win
+      win: win,
+      primary: Boolean(options.primary)
     });
 
     var sfx = new CB.SfxPlayer({ config: config });
@@ -105,6 +106,11 @@
     function applySettings(settings) {
       sfx.setEnabled(settings.sfxEnabled);
       sfx.setVolume(settings.sfxVolume);
+
+      // 背景はプレビューにも反映します (配信の見え方を確かめるため)
+      config.ui.background.dim = settings.backgroundDim;
+      renderer.setBackground(settings.backgroundUrl);
+
       if (preview) return;
 
       var player = settings.bgmUrl ? ensureBgm() : bgm;
@@ -170,7 +176,7 @@
       if (kill.enemy.maxHp >= config.ui.bossBarMinHp) {
         renderer.float(kill.enemy.label + ' DEFEATED',
           kill.enemy.position.x, kill.enemy.position.y,
-          { color: kill.enemy.color, size: 52 });
+          { color: kill.enemy.color, size: 40 });
       }
     });
 
@@ -196,7 +202,7 @@
     listen(engine, 'item:taken', function (taken) {
       play('item');
       renderer.float(taken.item.label, taken.circle.position.x, above(taken.circle),
-        { color: taken.item.color, size: 36 });
+        { color: taken.item.color, size: 30 });
     });
 
     // Lv100 は最終到達点。ここだけ他と明確に違う出し方にします
@@ -207,7 +213,7 @@
 
       play('rank');
       renderer.float('LEGENDARY', circle.position.x, above(circle),
-        { color: color, size: 52 });
+        { color: color, size: 46 });
       renderer.flash(circle.position.x, circle.position.y, circle.radius * 1.6, color);
       renderer.showStageBanner('LEVEL 100', 'LEGENDARY CORE  \u2013  NOVA', 2200);
       renderer.pushEvent(circle.ownerName, 'LEGENDARY CORE  NOVA', 'max');
@@ -226,7 +232,7 @@
       play(SPAWN_SFX[up.sourceEvent] || 'spawn');
       // レベルの数字はその場に小さく飛ばすだけ。円のバッジも同時に変わります。
       renderer.float('Lv' + up.to, up.circle.position.x, above(up.circle),
-        { color: '#7dd3fc', size: 30 });
+        { color: '#7dd3fc', size: 26 });
       showWeaponUpgrade(up.circle, up.from, up.to);
     });
 
@@ -247,7 +253,7 @@
       if (tier.minLevel >= config.viewers.levels.max) return;
 
       renderer.float(tier.name, circle.position.x, above(circle),
-        { color: tier.color, size: 44 });
+        { color: tier.color, size: 38 });
       renderer.flash(circle.position.x, circle.position.y, circle.radius, tier.color);
       play('rank');
 
@@ -279,7 +285,7 @@
       renderer.float(
         '+' + Math.round(kill.points) + (chained ? '  COMBO x' + kill.combo : ''),
         enemy.position.x, enemy.position.y,
-        { color: chained ? '#fb923c' : '#e2e8f0', size: chained ? 42 : 28 });
+        { color: chained ? '#fb923c' : '#e2e8f0', size: chained ? 34 : 24 });
     });
 
     listen(session, 'real-event', function () {
@@ -376,7 +382,7 @@
       if (!recent) { renderer.setSelfRank(''); return; }
 
       var rank = app.leaderboard.rankOf(recent.userId);
-      if (!rank || rank <= config.ui.rankingSize) { renderer.setSelfRank(''); return; }
+      if (!rank || rank <= config.ranking.size) { renderer.setSelfRank(''); return; }
 
       // 「あと少し」を 1 つだけ添えます。2 つ以上並べると、どちらも読まれません。
       var top = renderer.top || [];

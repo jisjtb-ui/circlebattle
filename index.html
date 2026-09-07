@@ -71,6 +71,23 @@
       </section>
 
       <section class="card">
+        <h2 class="card__title">BACKGROUND</h2>
+        <p class="card__note">
+          盤面いっぱいに敷く画像です。<b>1080×1920</b> で作ると、画像の座標と
+          盤面の座標がそのまま一致します。
+        </p>
+        <div class="row">
+          <label class="file">IMAGE <input id="bg-file" type="file" accept="image/*"></label>
+          <button type="button" id="btn-bg-clear">CLEAR</button>
+        </div>
+        <div class="row">
+          <label>DIM <input id="bg-dim" type="range" min="0" max="80" step="5"></label>
+          <output id="bg-dim-out">28%</output>
+          <span class="card__note" id="bg-name">画像なし</span>
+        </div>
+      </section>
+
+      <section class="card">
         <h2 class="card__title">TEST EVENTS</h2>
         <div class="row">
           <label>USER <input id="test-user" type="text" value="tester" autocomplete="off"></label>

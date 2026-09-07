@@ -59,7 +59,7 @@ test('100 人が操作し続けてもフレームが飛ばない', () => {
   assert.strictEqual(dropped, 0, `${dropped} フレームが 16.7ms を超えた (最悪 ${worst.toFixed(1)}ms)`);
 });
 
-test('100 人でも円と敵は上限内、ランキングは 10 人', () => {
+test('100 人でも円と敵は上限内、ランキングは決めた人数', () => {
   const harness = setup();
   const users = makeUsers(100);
   const { engine, leaderboard, config } = harness;
@@ -72,7 +72,7 @@ test('100 人でも円と敵は上限内、ランキングは 10 人', () => {
   assert.ok(engine.circles.length <= config.viewers.limits.maxCircles);
   assert.ok(engine.enemies.length <= config.enemies.spawn.maxAlive);
   assert.strictEqual(leaderboard.count(), 100, '参加者が漏れている');
-  assert.strictEqual(leaderboard.top().length, 10);
+  assert.strictEqual(leaderboard.top().length, config.ranking.size);
 
   // 上位から順に並んでいる
   const top = leaderboard.top();
