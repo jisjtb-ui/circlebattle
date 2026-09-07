@@ -147,8 +147,19 @@
 
     listen(engine, 'damage', function (hit) {
       play('hit');
-      // 武器ごとの斬撃・弾・衝撃。描く側で数と大きさを絞っています
-      renderer.attackEffect(hit.circle, hit.enemy);
+      // 武器で斬ったときだけ、武器ごとの斬撃・弾・衝撃を出します。
+      // 本体がぶつかっただけのときに出すと、Lv1 の円まで斬撃を振ることになります。
+      if (hit.source === 'weapon') renderer.attackEffect(hit.circle, hit.enemy);
+    });
+
+    // 最終形態の衝撃波。射程内の敵を巻き込んだときだけ出ます
+    listen(engine, 'weapon:nova', function (burst) {
+      var circle = burst.circle;
+      var tier = renderer.weapons ? renderer.weapons.tierFor(circle.level) : null;
+      renderer.flash(circle.position.x, circle.position.y,
+        circle.radius * (tier && tier.hit ? tier.hit.reach : 1.7),
+        (tier && tier.color) || '#facc15');
+      play('rank');
     });
 
     listen(engine, 'enemy:killed', function (kill) {
@@ -198,8 +209,8 @@
       renderer.float('LEGENDARY', circle.position.x, above(circle),
         { color: color, size: 52 });
       renderer.flash(circle.position.x, circle.position.y, circle.radius * 1.6, color);
-      renderer.showStageBanner('LEVEL 100', 'LEGENDARY CORE', 2200);
-      renderer.pushEvent(circle.ownerName, 'LEGENDARY CORE', 'max');
+      renderer.showStageBanner('LEVEL 100', 'LEGENDARY CORE  \u2013  NOVA', 2200);
+      renderer.pushEvent(circle.ownerName, 'LEGENDARY CORE  NOVA', 'max');
     });
 
     // 生まれた。**自分の円が出たことが分かる**のが、次の LIKE を押す理由になります。
@@ -240,11 +251,17 @@
       renderer.flash(circle.position.x, circle.position.y, circle.radius, tier.color);
       play('rank');
 
+      // 能力が増える段では、何ができるようになったのかも 1 行だけ出します
+      var ability = tier.ability;
+      if (ability && ability.name) {
+        renderer.pushEvent(circle.ownerName, tier.name + '  ' + ability.name, 'max');
+      }
+
       // 節目だけ中央にも出します。毎段出すと 10 回ぶん画面をふさぎます
       if (config.weapons.milestones.indexOf(tier.minLevel) === -1) return;
       renderer.showStageBanner('LEVEL ' + tier.minLevel,
-        'NEW WEAPON \u2013 ' + tier.name, tier.minLevel >= 100 ? 2200 : 1600);
-      renderer.pushEvent(circle.ownerName, 'Lv' + tier.minLevel + ' ' + tier.name, 'max');
+        tier.name + (ability ? '  \u2013  ' + ability.name : ''),
+        tier.minLevel >= 100 ? 2200 : 1600);
     }
 
     // 順番待ちに入った。押した操作が捨てられていないことを見せます。

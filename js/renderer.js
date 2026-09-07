@@ -186,6 +186,7 @@
       this._drawCircle(ctx, state.circles[i], scale, now);
     }
     this._drawAttacks(ctx, scale, now);
+    if (this.debugHits) this._drawHitboxes(ctx, state.circles, scale);
     // レベルは円を全部描いたあとに描きます。円と一緒に描くと、
     // あとから描かれた円の下に隠れて読めなくなるためです。
     for (i = 0; i < state.circles.length; i += 1) {
@@ -613,12 +614,17 @@
     var dy = target.position.y - circle.position.y;
     var length = Math.sqrt(dx * dx + dy * dy) || 1;
 
+    // 刃が敵に当たったところに出します。円のふちに出すと、離れた敵を
+    // 斬ったときに「当たっていないのに斬撃だけ出ている」ように見えます。
+    // プロフィール画像にかぶらないよう、円のふちより内側には入れません。
+    var reach = tier.hit ? circle.radius * tier.hit.reach : circle.radius;
+    var at = Math.max(circle.radius * 0.95, Math.min(length - target.radius, reach));
+
     this._attacks.push({
       kind: tier.attack,
       color: circle.demo ? this.config.weapons.npcColor : tier.color,
-      // 円のふちから敵側へ少し出た位置 (プロフィール画像にかぶらない)
-      x: circle.position.x + dx / length * circle.radius * 0.95,
-      y: circle.position.y + dy / length * circle.radius * 0.95,
+      x: circle.position.x + dx / length * at,
+      y: circle.position.y + dy / length * at,
       angle: Math.atan2(dy, dx),
       radius: circle.radius,
       at: Date.now()
@@ -626,6 +632,41 @@
 
     // 増えすぎると画面が線で埋まるので、古いものから捨てます
     while (this._attacks.length > settings.max) this._attacks.shift();
+  };
+
+  /**
+   * 当たり判定を線で出す (確認用)。
+   *
+   * `CB.renderer.debugHits = true` で出ます。配信では使いません。
+   * 見えている武器と当たる場所が合っているかを、目で確かめるためのものです。
+   */
+  Renderer.prototype._drawHitboxes = function (ctx, circles, scale) {
+    var engine = this.engine;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = 1.5;
+
+    for (var i = 0; i < circles.length; i += 1) {
+      var circle = circles[i];
+      var tier = engine.weaponTier ? engine.weaponTier(circle.level) : null;
+      var hit = tier && tier.hit;
+      if (!hit) continue;
+
+      var x = circle.position.x * scale;
+      var y = circle.position.y * scale;
+      var inner = circle.radius * this.config.weapons.combat.innerReach * scale;
+      var outer = circle.radius * hit.reach * scale;
+
+      for (var k = 0; k < hit.arms; k += 1) {
+        var mid = circle.weaponAngle + (hit.offset || 0) + k * (Math.PI * 2 / hit.arms);
+        ctx.beginPath();
+        ctx.arc(x, y, outer, mid - hit.arc, mid + hit.arc);
+        ctx.arc(x, y, inner, mid + hit.arc, mid - hit.arc, true);
+        ctx.closePath();
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
   };
 
   Renderer.prototype._drawAttacks = function (ctx, scale, now) {

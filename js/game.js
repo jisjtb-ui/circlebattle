@@ -30,6 +30,30 @@
    * @param {number} level    1 〜 levels.max
    * @param {object} viewers  CONFIG.viewers
    */
+  /**
+   * そのレベルの武器の段を返す。
+   *
+   * 武器は見た目だけでなく**当たり判定と特殊能力**を持つので、段の引き当ては
+   * ルール側 (ここ) が持ちます。描画側 (js/weapons.js) はこれを読むだけです。
+   * 2 か所で別々に計算すると、見えている武器と当たる武器がずれます。
+   */
+  function weaponTierFor(level, weapons) {
+    var tiers = (weapons && weapons.tiers) || [];
+    var found = tiers[0] || null;
+    for (var i = 0; i < tiers.length; i += 1) {
+      if (level >= tiers[i].minLevel) found = tiers[i]; else break;
+    }
+    return found;
+  }
+
+  /** 角度の差を -π〜π に畳む。 */
+  function angleDelta(a, b) {
+    var d = (a - b) % (Math.PI * 2);
+    if (d > Math.PI) d -= Math.PI * 2;
+    if (d < -Math.PI) d += Math.PI * 2;
+    return d;
+  }
+
   function statsForLevel(level, viewers) {
     var scaling = viewers.scaling;
     var lv = clampLevel(level, viewers);
@@ -118,6 +142,25 @@
   /** レベルの上限。 */
   BattleEngine.prototype.maxLevel = function () {
     return this.config.viewers.levels.max;
+  };
+
+  /**
+   * その円の武器の段。レベルごとに覚えておきます (段は 11 個しかありません)。
+   */
+  BattleEngine.prototype.weaponTier = function (level) {
+    var weapons = this.config.weapons;
+    if (!weapons || !weapons.enabled) return null;
+    if (!this._tiers) this._tiers = {};
+    if (this._tiers[level] === undefined) {
+      this._tiers[level] = weaponTierFor(level, weapons);
+    }
+    return this._tiers[level];
+  };
+
+  /** その円の特殊能力 (無ければ null)。 */
+  BattleEngine.prototype.abilityOf = function (circle) {
+    var tier = this.weaponTier(circle.level);
+    return tier ? tier.ability : null;
   };
 
   // ------------------------------------------------------------- events
@@ -524,6 +567,18 @@
       /** 暴れる時間の終わり。Infinity なら無期限。 */
       burstUntil: null,
       lastAttackAt: 0,
+      /**
+       * 武器の向き (ラジアン)。**当たり判定も描画もこの 1 つを見ます。**
+       * 生まれた向きは円ごとにずらします (全部が揃って回ると作り物に見えます)。
+       */
+      weaponAngle: this.random() * Math.PI * 2,
+      /** 武器で最後に殴った時刻。本体の殴り合いとは別に数えます。 */
+      lastWeaponAt: 0,
+      /**
+       * 衝撃波 (NOVA) を最後に出した時刻。
+       * 0 で始めるので、最大レベルに届いた瞬間に 1 発目が出ます (区切りの演出)。
+       */
+      lastNovaAt: 0,
       demo: Boolean(spec.demo),
       dead: false
     };
@@ -978,12 +1033,40 @@
   BattleEngine.prototype._moveCirclesAndFight = function (dt, now) {
     var seek = (this.config.viewers.movement || {}).mode === 'seek';
 
+    var combat = (this.config.weapons && this.config.weapons.combat) || null;
+    var weaponsOn = combat && combat.enabled && this.config.weapons.enabled;
+
     for (var i = 0; i < this.circles.length; i += 1) {
       var circle = this.circles[i];
       if (circle.dead) continue;
 
       var nearest = null;
       var nearestDist = Infinity;
+
+      // --- 武器を回す。当たり判定も描画もこの角度 1 つを見ます
+      var tier = weaponsOn ? this.weaponTier(circle.level) : null;
+      var hit = tier && tier.hit;
+      var ability = (tier && tier.ability) || null;
+      if (tier) circle.weaponAngle += tier.spin * dt;
+
+      // 武器が振れる状態か (間隔は特殊能力の rate で縮みます)
+      var swingReady = false;
+      var weaponReach = 0;
+      var innerReach = 0;
+      var swings = 0;
+      var maxSwings = 0;
+      if (hit) {
+        var interval = combat.intervalMs * ((ability && ability.rate) || 1);
+        swingReady = now - circle.lastWeaponAt >= interval;
+        weaponReach = circle.radius * hit.reach;
+        innerReach = circle.radius * combat.innerReach;
+        maxSwings = (ability && ability.maxTargets) || 1;
+      }
+
+      // 衝撃波 (NOVA) の番か。射程内の敵を全部まとめて殴ります
+      var nova = ability && ability.nova;
+      var novaReady = nova && now - circle.lastNovaAt >= nova.intervalMs;
+      var novaHits = 0;
 
       for (var j = 0; j < this.enemies.length; j += 1) {
         var enemy = this.enemies[j];
@@ -994,6 +1077,26 @@
         var dist = Math.sqrt(dx * dx + dy * dy);
 
         if (seek && dist < nearestDist) { nearestDist = dist; nearest = enemy; }
+
+        // --- 武器の間合い。角度を出すのは間合いに入っている敵だけです
+        //     (全部の組み合わせで atan2 を呼ぶと、円 150 個で効いてきます)
+        if (hit && dist <= weaponReach + enemy.radius && dist + enemy.radius >= innerReach) {
+          if (novaReady) {
+            this._damageEnemy(enemy, circle, circle.attack * nova.damage, now, 'nova');
+            novaHits += 1;
+            if (enemy.dead) continue;
+          }
+          if (swingReady && swings < maxSwings && this._weaponCovers(circle, hit, dx, dy, dist, enemy.radius)) {
+            var dealt = circle.attack * combat.damage * hit.damage;
+            this._damageEnemy(enemy, circle, dealt, now, 'weapon');
+            swings += 1;
+            // 鎌やコアは斬ったぶんだけ自分の HP が戻ります
+            if (ability && ability.lifesteal) {
+              circle.hp = Math.min(circle.maxHp, circle.hp + dealt * ability.lifesteal);
+            }
+            if (enemy.dead) continue;
+          }
+        }
 
         // 接触したら殴り合う。どちらも自分の間隔でしか殴れません。
         if (dist <= enemy.radius + circle.radius) {
@@ -1014,6 +1117,12 @@
         }
       }
 
+      if (swings > 0) circle.lastWeaponAt = now;
+      if (novaReady) {
+        circle.lastNovaAt = now;
+        if (novaHits > 0) this.emit('weapon:nova', { circle: circle, hits: novaHits, at: now });
+      }
+
       // 'seek' のときだけ最寄りの敵へ向き直す。
       // 'linear' では速度に触らないので、等速のまままっすぐ進みます。
       if (seek && nearest && !circle.dead) {
@@ -1032,10 +1141,32 @@
   };
 
   /**
+   * 武器の刃が、その敵の方向を通っているか。
+   *
+   * 腕は等間隔に並んでいるので、いちばん近い腕との角度差だけを見れば足ります
+   * (腕が 6 本でも比較は 1 回)。敵の大きさぶんだけ当たり判定を広げます。
+   */
+  BattleEngine.prototype._weaponCovers = function (circle, hit, dx, dy, dist, enemyRadius) {
+    var step = Math.PI * 2 / hit.arms;
+    var toEnemy = Math.atan2(dy, dx);
+
+    // いちばん近い腕までの角度差。offset は「絵で腕が生えている向き」で、
+    // これを入れないと、見えている刃と当たる場所が食い違います。
+    var offset = angleDelta(toEnemy, circle.weaponAngle + (hit.offset || 0));
+    var nearest = Math.abs(offset - Math.round(offset / step) * step);
+
+    // 近くにいる敵ほど角度の幅が要る (同じ大きさでも見込む角が大きくなるため)
+    var margin = dist > 0 ? Math.atan2(enemyRadius, Math.max(dist, 1)) : Math.PI;
+    return nearest <= hit.arc + margin;
+  };
+
+  /**
    * 敵にダメージを与え、貢献度を記録する。
    * HP が 0 になったら 'enemy:killed' を出します。
+   *
+   * @param {string} [source] 'body' | 'weapon' | 'nova' … 画面が見せ方を変えます
    */
-  BattleEngine.prototype._damageEnemy = function (enemy, circle, amount, now) {
+  BattleEngine.prototype._damageEnemy = function (enemy, circle, amount, now, source) {
     var dealt = Math.min(amount, enemy.hp);
     if (dealt <= 0) return;
 
@@ -1067,6 +1198,8 @@
       amount: dealt,
       enemy: enemy,
       circle: circle,
+      /** どこから当たったか。'body' は円そのもの、'weapon' は回っている武器。 */
+      source: source || 'body',
       at: now
     });
 
@@ -1098,6 +1231,10 @@
   };
 
   BattleEngine.prototype._damageCircle = function (circle, amount) {
+    // AEGIS など、受けるダメージを減らす特殊能力
+    var ability = this.abilityOf(circle);
+    if (ability && ability.damageTaken != null) amount *= ability.damageTaken;
+
     circle.hp -= amount;
     if (circle.hp <= 0) {
       circle.hp = 0;
@@ -1334,6 +1471,7 @@
 
   global.CB = global.CB || {};
   global.CB.BattleEngine = BattleEngine;
+  global.CB.weaponTierFor = weaponTierFor;
   global.CB.statsForLevel = statsForLevel;
   global.CB.levelsFromGift = levelsFromGift;
 
@@ -1341,7 +1479,8 @@
     module.exports = {
       BattleEngine: BattleEngine,
       statsForLevel: statsForLevel,
-      levelsFromGift: levelsFromGift
+      levelsFromGift: levelsFromGift,
+      weaponTierFor: weaponTierFor
     };
   }
 })(typeof window !== 'undefined' ? window : this);

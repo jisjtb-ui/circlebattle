@@ -183,7 +183,7 @@ test('円が力尽きたら、次の行動で新しい円ができる', () => {
   assert.strictEqual(first.level, 10);
 
   // 力尽きさせる
-  engine._damageCircle(first, first.hp);
+  engine._damageCircle(first, first.maxHp * 10);   // 軽減があっても確実に倒す
   engine._cleanup();
   assert.strictEqual(circlesOf(engine, 'u1').length, 0);
 
@@ -433,7 +433,7 @@ test('円が減ったら、順番待ちから次が出てくる', () => {
 
   // 1 つ倒れる
   const victim = circlesOf(engine, 'u1')[0];
-  engine._damageCircle(victim, victim.hp);
+  engine._damageCircle(victim, victim.maxHp * 10);  // 軽減があっても確実に倒す
   engine._cleanup();
 
   const mine = circlesOf(engine, 'u1');

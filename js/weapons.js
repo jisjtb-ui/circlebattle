@@ -25,6 +25,23 @@
 (function (global) {
   'use strict';
 
+  /**
+   * 段の引き当ては js/game.js が持っています。ここはそれを借りるだけです。
+   * 借りられない場合 (単体で読み込んだとき) だけ同じ計算をします。
+   */
+  function tierForLevel(level, weapons) {
+    var rules = (global.CB && global.CB.weaponTierFor) ||
+      (typeof require === 'function' ? require('./game.js').weaponTierFor : null);
+    if (rules) return rules(level, weapons);
+
+    var tiers = weapons.tiers;
+    var found = tiers[0];
+    for (var i = 0; i < tiers.length; i += 1) {
+      if (level >= tiers[i].minLevel) found = tiers[i]; else break;
+    }
+    return found;
+  }
+
   /** 絵の中での「円の半径」。実際の半径に合わせて縮めて貼ります。 */
   var UNIT = 40;
   /**
@@ -94,7 +111,6 @@
 
     // Lv10-19: 小さい光る剣が 1 本
     blade: {
-      spinA: 0.9,
       a: [function (ctx, u) {
         blade(ctx, u, 1.05, 1.6, 0.11);
         ctx.fillRect(1.0 * u, -0.05 * u, 0.1 * u, 0.1 * u);       // つば
@@ -103,7 +119,6 @@
 
     // Lv20-29: 2 本になる
     twin: {
-      spinA: 1.25,
       a: [0, Math.PI].map(function (angle) {
         return function (ctx, u) {
           at(ctx, angle, function () {
@@ -116,7 +131,6 @@
 
     // Lv30-39: 長いエネルギー槍
     spear: {
-      spinA: 0.75,
       a: [function (ctx, u) {
         ctx.fillRect(0.98 * u, -0.08 * u, 0.46 * u, 0.16 * u);    // 柄
         blade(ctx, u, 1.34, 1.79, 0.26);                          // 穂先
@@ -127,7 +141,6 @@
 
     // Lv40-49: 大型のエネルギー斧
     axe: {
-      spinA: 0.62,
       a: [function (ctx, u) {
         ctx.fillRect(1.0 * u, -0.045 * u, 0.5 * u, 0.09 * u);
         crescent(ctx, u, 1.4, 1.78, -0.42, 0.42);
@@ -136,7 +149,6 @@
 
     // Lv50-59: 大型の鎌。円のまわりを大きく回ります
     scythe: {
-      spinA: 1.7,
       a: [function (ctx, u) {
         ctx.fillRect(1.0 * u, -0.04 * u, 0.42 * u, 0.08 * u);
         crescent(ctx, u, 1.34, 1.7, -0.15, 1.15);                 // 長く伸びる刃
@@ -146,7 +158,6 @@
 
     // Lv60-69: 2 つの円刃が旋回する
     chakram: {
-      spinB: 2.7,
       b: [0, Math.PI].map(function (angle) {
         return function (ctx, u) {
           orb(ctx, u, angle, 1.46, 0.34, true);
@@ -161,7 +172,6 @@
 
     // Lv70-79: 円の横に大型のエネルギー砲
     cannon: {
-      spinA: 0.45,
       a: [-Math.PI / 2, Math.PI / 2].map(function (angle) {
         return function (ctx, u) {
           at(ctx, angle, function () {
@@ -177,14 +187,13 @@
     // 羽根は塗り潰しではなく細い刃を扇状に並べます。塗り潰すと光を足したときに
     // 真っ白な塊になって、円の中身まで見えなくなります。
     wings: {
-      spinA: 0.3,
       a: (function () {
         var feathers = [[0.00, 1.5], [0.20, 1.72], [0.42, 1.79], [0.64, 1.6], [0.84, 1.34]];
         var parts = [];
         [-1, 1].forEach(function (side) {
           // 片翼を 1 枚の絵にまとめます (羽根 1 枚ずつだと貼る回数が増えすぎます)
           parts.push(function (ctx, u) {
-            at(ctx, side * 2.25, function () {
+            at(ctx, side * (Math.PI * 2 / 3), function () {
               feathers.forEach(function (feather) {
                 at(ctx, feather[0] * side, function () { blade(ctx, u, 1.02, feather[1], 0.075); });
               });
@@ -198,8 +207,6 @@
 
     // Lv90-99: 複数の攻撃用オーブが周回する
     orbital: {
-      spinA: -0.5,
-      spinB: 1.9,
       a: [0, Math.PI].map(function (angle) {
         return function (ctx, u) {
           at(ctx, angle, function () { blade(ctx, u, 1.03, 1.46, 0.13); });
@@ -223,8 +230,6 @@
 
     // Lv100: 最終形態。武器ではなくコアそのもの
     core: {
-      spinA: -0.65,
-      spinB: 2.1,
       a: (function () {
         // 内側の欠片。虹色オーラ (renderer 側) の内側に収まる位置に置きます
         var parts = [];
@@ -275,18 +280,18 @@
     this._byLevel = {};
   }
 
-  /** そのレベルの段。 */
+  /**
+   * そのレベルの段。
+   *
+   * 段の引き当ては**ルール側 (js/game.js) の関数をそのまま使います**。
+   * 武器は当たり判定と特殊能力を持つので、見た目とルールで別々に計算すると、
+   * 見えている武器と当たる武器がずれます。
+   */
   Weapons.prototype.tierFor = function (level) {
     var cached = this._byLevel[level];
     if (cached) return cached;
-
-    var tiers = this.settings.tiers;
-    var found = tiers[0];
-    for (var i = 0; i < tiers.length; i += 1) {
-      if (level >= tiers[i].minLevel) found = tiers[i]; else break;
-    }
-    this._byLevel[level] = found;
-    return found;
+    this._byLevel[level] = tierForLevel(level, this.settings);
+    return this._byLevel[level];
   };
 
   /**
@@ -481,9 +486,14 @@
     // NPC は同じレベルの本物より必ず控えめに見えるようにします
     if (circle.demo) alpha *= settings.npcAlpha;
 
-    // 円ごとに回り始めをずらす (全部が揃って回ると作り物に見えます)
-    var offset = (circle.bornAt % 6283) / 1000;
-    var seconds = now / 1000;
+    /*
+     * 回転の角度は**円が持っているもの**をそのまま使います。ここで時刻から
+     * 計算し直すと、当たり判定 (engine 側) と 1 フレームぶんずれて、
+     * 「当たったように見えたのに当たらない」が起きます。
+     */
+    var angle = circle.weaponAngle || 0;
+    var counter = angle * (settings.counterSpin || 0);
+    var hitLayer = (tier.hit && tier.hit.layer) || 'a';
 
     // 軌跡は段の後半から (Lv15 / Lv25 …)。速さと向きは円が持っているので、
     // 履歴を貯めなくても「さっきまで居た場所」に貼るだけで出せます。
@@ -492,25 +502,25 @@
       ? (progress - settings.trailFrom) / (1 - settings.trailFrom)
       : 0;
 
+    // 当たる側の層は当たり判定と同じ角度で、もう一方はゆっくり逆に回します
     var layers = [
-      { parts: this._parts(tier, 'a', color), spin: painters.spinA || 0 },
-      { parts: this._parts(tier, 'b', color), spin: painters.spinB || 0 }
+      { parts: this._parts(tier, 'a', color), angle: hitLayer === 'a' ? angle : counter },
+      { parts: this._parts(tier, 'b', color), angle: hitLayer === 'b' ? angle : counter }
     ];
 
     for (var i = 0; i < layers.length; i += 1) {
       var layer = layers[i];
       if (!layer.parts) continue;
-      var angle = seconds * layer.spin + offset;
 
       if (trail > 0) {
         var back = 0.06 * trail;
         this._stamp(ctx, layer.parts,
           x - circle.velocity.x * scale * back,
           y - circle.velocity.y * scale * back,
-          r, angle - layer.spin * back, alpha * 0.3 * trail, grow);
+          r, layer.angle - tier.spin * back, alpha * 0.3 * trail, grow);
       }
 
-      this._stamp(ctx, layer.parts, x, y, r, angle, alpha, grow);
+      this._stamp(ctx, layer.parts, x, y, r, layer.angle, alpha, grow);
     }
   };
 

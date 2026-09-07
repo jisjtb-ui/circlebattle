@@ -38,11 +38,16 @@
     },
 
     /**
-     * 武器の進化。**見た目だけ**の仕組みです。
+     * 武器の進化。
      *
-     * HP も攻撃力も速さも半径も、ここでは 1 つも変えません。既存のレベル補正
-     * (viewers.scaling) がステータスを持っていて、ここはその「見え方」だけを
-     * 担当します。両方が強さをいじると、どちらが効いているのか分からなくなります。
+     * 武器は円のまわりを**回りながら、当たった敵を斬ります**。当たり判定は
+     * 見た目と同じ角度・同じ長さを使うので、「当たったように見えたのに
+     * 当たらない」ことがありません (角度は engine が持ち、描画はそれを読むだけ)。
+     *
+     * 円そのものの HP・攻撃力・速さ・半径は今までどおり viewers.scaling が
+     * 決めます。ここが足すのは**武器のぶんの攻撃と、段ごとの特殊能力**だけです。
+     * 円の基本値をここで書き換えないのは、どちらが効いているのか分からなく
+     * なるのを避けるためです。
      *
      * 武器は円の**外側**にだけ描きます (extent)。プロフィール画像は
      * ゲームの中で一番大事な情報なので、何があっても隠しません。
@@ -69,6 +74,13 @@
       trailFrom: 0.5,
 
       /**
+       * 当たり判定を持たないほうの層 (周回物 / 本体) が回る速さ。
+       * 当たる側の spin に対する倍率です。逆回りにして、当たる側の刃が
+       * どれなのかを見分けやすくしてあります。
+       */
+      counterSpin: -0.35,
+
+      /**
        * 仮の視聴者 (NPC) の武器。
        *
        * 色を落とし、光り足しもしません。**本物の視聴者より目立たせない**のが
@@ -80,6 +92,23 @@
 
       /** この段に上がったときだけ画面中央に短い演出を出す。 */
       milestones: [50, 100],
+
+      /**
+       * 武器の当たり判定。
+       *
+       * 判定は「円の中心からの距離」と「武器の角度」の 2 つだけです。
+       * 敵との距離は戦闘ループで既に出しているので、足すのは角度の比較だけで、
+       * 円が 150 個あっても重くなりません。
+       */
+      combat: {
+        enabled: true,
+        /** 武器で殴る間隔 (ミリ秒)。円の本体の殴り合いとは別に数えます。 */
+        intervalMs: 300,
+        /** 円の攻撃力に対する武器の倍率。段ごとの倍率にさらに掛かります。 */
+        damage: 0.5,
+        /** 当たり判定の内側 (半径の倍率)。円のふちのすぐ外から効きます。 */
+        innerReach: 1.0
+      },
 
       /** 攻撃したときのエフェクト。 */
       attackEffects: {
@@ -95,20 +124,87 @@
        * Lv1〜100 を 10 段に分けたもの。minLevel は昇順。
        *
        * ここに 1 行足せば段が増えます (描き方は js/weapons.js の PAINTERS に
-       * 同じ id で足します)。attack は攻撃エフェクトの種類、null なら出しません。
+       * 同じ id で足します)。
+       *
+       *   attack … 攻撃エフェクトの種類。null なら出しません
+       *   spin   … 武器が回る速さ (ラジアン/秒)。当たり判定もこの角度で回ります
+       *   hit    … 当たり判定
+       *       arms   … 腕の数。等間隔に並びます (2 なら 180 度ごと)
+       *       arc    … 腕 1 本の当たる角度の半分 (ラジアン)
+       *       offset … 腕が生えている向き。絵と揃えます (省略で 0)
+       *       reach  … 届く距離 (円の半径の倍率)
+       *       damage … 武器のダメージ倍率
+       *       layer  … 見た目のどちらの層と一緒に回るか ('a' 本体 / 'b' 周回物)
+       *   ability … 段の特殊能力。下の 5 つの部品の組み合わせで作ります
+       *       name        … 画面に出す名前
+       *       maxTargets  … 一振りで当たる敵の数
+       *       lifesteal   … 武器で与えたダメージのうち、自分の HP に戻る割合
+       *       rate        … 武器の攻撃間隔の倍率 (小さいほど速い)
+       *       damageTaken … 受けるダメージの倍率 (小さいほど固い)
+       *       nova        … { intervalMs, damage } 射程内の敵全部への衝撃波
+       *
+       * 特殊能力を 5 つの部品で作るのは、段ごとに専用の仕組みを書くと
+       * 10 個の別々のゲームになってしまうためです。部品の数字を変えるだけなら、
+       * 強さの調整も 1 か所で済みます。
        */
       tiers: [
-        { minLevel: 1, id: 'none', name: 'NO WEAPON', color: '#94a3b8', attack: null },
-        { minLevel: 10, id: 'blade', name: 'NEON BLADE', color: '#38bdf8', attack: 'slash' },
-        { minLevel: 20, id: 'twin', name: 'TWIN BLADES', color: '#06b6d4', attack: 'twin' },
-        { minLevel: 30, id: 'spear', name: 'ENERGY SPEAR', color: '#10b981', attack: 'thrust' },
-        { minLevel: 40, id: 'axe', name: 'PLASMA AXE', color: '#f59e0b', attack: 'impact' },
-        { minLevel: 50, id: 'scythe', name: 'ENERGY SCYTHE', color: '#8b5cf6', attack: 'sweep' },
-        { minLevel: 60, id: 'chakram', name: 'TWIN CHAKRAMS', color: '#ec4899', attack: 'spin' },
-        { minLevel: 70, id: 'cannon', name: 'PLASMA CANNON', color: '#ef4444', attack: 'bolt' },
-        { minLevel: 80, id: 'wings', name: 'ENERGY WINGS', color: '#3b82f6', attack: 'wing' },
-        { minLevel: 90, id: 'orbital', name: 'ORBITAL WEAPON', color: '#a855f7', attack: 'multi' },
-        { minLevel: 100, id: 'core', name: 'LEGENDARY CORE', color: '#facc15', attack: 'core' }
+        {
+          minLevel: 1, id: 'none', name: 'NO WEAPON', color: '#94a3b8', attack: null,
+          spin: 0, hit: null, ability: null
+        },
+        {
+          minLevel: 10, id: 'blade', name: 'NEON BLADE', color: '#38bdf8', attack: 'slash',
+          spin: 2.6, hit: { arms: 1, arc: 0.22, reach: 1.62, damage: 1, layer: 'a' },
+          ability: null
+        },
+        {
+          minLevel: 20, id: 'twin', name: 'TWIN BLADES', color: '#06b6d4', attack: 'twin',
+          spin: 3.0, hit: { arms: 2, arc: 0.2, reach: 1.66, damage: 1, layer: 'a' },
+          ability: { name: 'TWIN STRIKE', maxTargets: 2 }
+        },
+        {
+          minLevel: 30, id: 'spear', name: 'ENERGY SPEAR', color: '#10b981', attack: 'thrust',
+          spin: 2.4, hit: { arms: 1, arc: 0.18, reach: 1.82, damage: 1.45, layer: 'a' },
+          ability: { name: 'PIERCE', maxTargets: 2 }
+        },
+        {
+          minLevel: 40, id: 'axe', name: 'PLASMA AXE', color: '#f59e0b', attack: 'impact',
+          spin: 2.1, hit: { arms: 1, arc: 0.48, reach: 1.78, damage: 1.6, layer: 'a' },
+          ability: { name: 'CLEAVE', maxTargets: 3 }
+        },
+        {
+          minLevel: 50, id: 'scythe', name: 'ENERGY SCYTHE', color: '#8b5cf6', attack: 'sweep',
+          spin: 3.4, hit: { arms: 1, arc: 0.65, offset: 0.5, reach: 1.7, damage: 1.5, layer: 'a' },
+          ability: { name: 'LIFESTEAL', maxTargets: 3, lifesteal: 0.35 }
+        },
+        {
+          minLevel: 60, id: 'chakram', name: 'TWIN CHAKRAMS', color: '#ec4899', attack: 'spin',
+          spin: 4.4, hit: { arms: 2, arc: 0.34, reach: 1.72, damage: 1.4, layer: 'b' },
+          ability: { name: 'WHIRL', maxTargets: 4 }
+        },
+        {
+          minLevel: 70, id: 'cannon', name: 'PLASMA CANNON', color: '#ef4444', attack: 'bolt',
+          spin: 1.8, hit: { arms: 2, arc: 0.3, offset: Math.PI / 2, reach: 1.7, damage: 1.5, layer: 'a' },
+          ability: { name: 'BARRAGE', maxTargets: 3, rate: 0.55 }
+        },
+        {
+          minLevel: 80, id: 'wings', name: 'ENERGY WINGS', color: '#3b82f6', attack: 'wing',
+          spin: 2.2, hit: { arms: 3, arc: 0.6, reach: 1.76, damage: 1.5, layer: 'a' },
+          ability: { name: 'AEGIS', maxTargets: 4, damageTaken: 0.6 }
+        },
+        {
+          minLevel: 90, id: 'orbital', name: 'ORBITAL WEAPON', color: '#a855f7', attack: 'multi',
+          spin: 3.6, hit: { arms: 5, arc: 0.26, reach: 1.72, damage: 1.4, layer: 'b' },
+          ability: { name: 'ORBIT STRIKE', maxTargets: 5, damageTaken: 0.8 }
+        },
+        {
+          minLevel: 100, id: 'core', name: 'LEGENDARY CORE', color: '#facc15', attack: 'core',
+          spin: 4.0, hit: { arms: 3, arc: 0.5, reach: 1.75, damage: 1.6, layer: 'b' },
+          ability: {
+            name: 'NOVA', maxTargets: 6, lifesteal: 0.2, rate: 0.7, damageTaken: 0.55,
+            nova: { intervalMs: 2400, damage: 3.5 }
+          }
+        }
       ]
     },
 
