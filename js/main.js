@@ -79,6 +79,7 @@
 
     engine.on('circle:removed', function (removed) {
       if (removed.reason === 'defeated') sfx.play('lose');
+      if (removed.reason === 'burnout') sfx.play('kill', { pitch: 0.7 });
     });
 
     engine.on('item:taken', function (taken) {
@@ -129,9 +130,8 @@
     });
 
     // 最大レベルに届いたときだけ知らせる (毎回のレベルアップを出すと流れ続けます)
-    session.on('levelup', function (up) {
-      if (up.to < config.viewers.levels.max || up.from >= up.to) return;
-      renderer.showNotice('@' + up.user.uniqueId + ' → Lv' + up.to + ' MAX');
+    engine.on('circle:maxed', function (event) {
+      renderer.showNotice('@' + event.circle.ownerName + ' → MAX LEVEL');
       sfx.play('rank');
     });
 

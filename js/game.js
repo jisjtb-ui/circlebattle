@@ -396,6 +396,10 @@
       kills: 0,
       damage: 0,
       bornAt: now,
+      /** 最大レベルで暴れ始めた時刻。まだなら null。 */
+      maxedAt: null,
+      /** 暴れる時間の終わり。Infinity なら無期限。 */
+      burstUntil: null,
       lastAttackAt: 0,
       demo: Boolean(spec.demo),
       dead: false
@@ -404,6 +408,8 @@
     this.circles.push(circle);
     this.stats.circlesSpawned += 1;
     this.emit('circle:spawn', circle);
+    // 高額ギフトなどで、いきなり最大レベルで生まれることもあります
+    if (circle.level >= this.maxLevel()) this._enterBurst(circle, now);
     return circle;
   };
 
@@ -522,7 +528,8 @@
     var effect = item.effect || {};
     var before = {
       level: circle.level, hp: circle.hp, maxHp: circle.maxHp,
-      attack: circle.attack, radius: circle.radius, speed: circle.speed
+      attack: circle.attack, radius: circle.radius, speed: circle.speed,
+      burstUntil: circle.burstUntil
     };
 
     if (effect.type === 'level') {
@@ -539,6 +546,17 @@
       circle.speed = Math.max(circle.speed, stats.speed);
       // 拾ったごほうびとして全快させる (減ることはありません)
       circle.hp = circle.maxHp;
+      // 最大レベルに届いたなら、ギフトで届いたときと同じように暴れ始めます
+      if (circle.level >= this.maxLevel()) this._enterBurst(circle, now);
+
+    } else if (effect.type === 'heal') {
+      // HP を回復し、暴れている最中なら、その時間を延ばします。
+      // 運よく拾えた円は長く暴れ続けられます。
+      circle.hp = Math.min(circle.maxHp, circle.hp + circle.maxHp * (effect.ratio || 1));
+      if (circle.burstUntil != null && circle.burstUntil !== Infinity && effect.extendMs > 0) {
+        var limit = now + (effect.maxRemainingMs || effect.extendMs * 3);
+        circle.burstUntil = Math.min(circle.burstUntil + effect.extendMs, limit);
+      }
 
     } else if (effect.type === 'speed') {
       var cap = circle.baseSpeed * (effect.maxMultiplier || 1);
@@ -603,7 +621,44 @@
     this._restoreSpeed(circle);
 
     this.emit('circle:levelup', { circle: circle, from: before, to: circle.level, at: circle.leveledAt });
+    if (circle.level >= max) this._enterBurst(circle, circle.leveledAt);
     return circle.level - before;
+  };
+
+  /**
+   * 最大レベルの円が暴れ始める。
+   *
+   * 育てきった円をそのまま置いておくと、画面がだんだん最大レベルの円で
+   * 埋まっていき、見せ場もありません。短い間だけとんでもなく強く・速くして
+   * 稼がせ、時間が来たら燃え尽きて消えます。
+   */
+  BattleEngine.prototype._enterBurst = function (circle, at) {
+    if (circle.maxedAt != null) return circle;
+
+    var levels = this.config.viewers.levels;
+    var bonus = levels.maxBonus || {};
+    var now = at != null ? at : this.now();
+
+    circle.maxedAt = now;
+    circle.burstUntil = levels.maxDurationMs > 0 ? now + levels.maxDurationMs : Infinity;
+    circle.attack = Math.round(circle.attack * (bonus.attack || 1));
+    circle.speed = Math.min(circle.speed * (bonus.speed || 1), this.config.viewers.scaling.maxSpeed);
+    circle.hp = circle.maxHp;
+    this._restoreSpeed(circle);
+
+    this.emit('circle:maxed', { circle: circle, until: circle.burstUntil, at: now });
+    return circle;
+  };
+
+  /** 暴れる時間が終わった円を燃え尽きさせる。 */
+  BattleEngine.prototype._burstTick = function (now) {
+    for (var i = this.circles.length - 1; i >= 0; i -= 1) {
+      var circle = this.circles[i];
+      if (circle.burstUntil == null || now < circle.burstUntil) continue;
+      this.circles.splice(i, 1);
+      circle.dead = true;
+      this.emit('circle:removed', { circle: circle, reason: 'burnout' });
+    }
   };
 
   /** その人がいま育てている円 (最新の 1 つ)。 */
@@ -663,6 +718,7 @@
     this._collideAll(this.circles, dt);
     this._recenterTick(this.enemies, now);
     this._recenterTick(this.circles, now);
+    this._burstTick(now);
     this._cleanup();
 
     this.emit('tick', { at: now, dt: dt });

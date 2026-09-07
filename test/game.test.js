@@ -323,15 +323,26 @@ test('大きい円ほど押し勝つ (小さい円だけが跳ね返る)', () =>
 
   const small = engine.spawnCircle({ ownerId: 'a', ownerName: 'a', level: 1 });
   const big = engine.spawnCircle({ ownerId: 'b', ownerName: 'b', level: 60 });
-  small.position.x = 460; small.position.y = 500; small.velocity.x = small.speed; small.velocity.y = 0;
-  big.position.x = 560; big.position.y = 500; big.velocity.x = 0; big.velocity.y = 0;
-  const bigHeadingBefore = { x: big.velocity.x, y: big.velocity.y };
 
-  advance(1_000, { steps: 60 });
+  // 触れている状態から、小さい円を大きい円へ押し込む
+  small.position.x = 480; small.position.y = 500;
+  small.velocity.x = small.speed; small.velocity.y = 0;
+  // 大きい円は直角の向きに進んでいる (押されれば向きが変わる)
+  big.position.x = 520; big.position.y = 500;
+  big.velocity.x = 0; big.velocity.y = big.speed;
 
-  assert.ok(small.velocity.x < 0, '小さい円が跳ね返っていない');
-  assert.ok(Math.hypot(big.velocity.x - bigHeadingBefore.x, big.velocity.y - bigHeadingBefore.y) < small.speed,
-    '大きい円が小さい円と同じだけ飛ばされている');
+  const heading = (c) => Math.atan2(c.velocity.y, c.velocity.x) * 180 / Math.PI;
+  const bigBefore = heading(big);
+  const smallBefore = heading(small);
+
+  advance(200, { steps: 12 });          // 壁に届く前に見る
+
+  const smallTurn = Math.abs(heading(small) - smallBefore);
+  const bigTurn = Math.abs(heading(big) - bigBefore);
+
+  assert.ok(smallTurn > 30, `小さい円が ${smallTurn.toFixed(0)} 度しか曲がっていない`);
+  assert.ok(bigTurn < smallTurn / 3,
+    `大きい円が ${bigTurn.toFixed(0)} 度、小さい円が ${smallTurn.toFixed(0)} 度 (差が小さすぎる)`);
 });
 
 test('円が敵にぶつかっても跳ね返る', () => {
@@ -517,4 +528,102 @@ test('敵の HP 倍率には上限がある', () => {
     engine.spawnCircle({ ownerId: 'u' + i, ownerName: 'u' + i, level: config.viewers.levels.max });
   }
   assert.strictEqual(engine.enemyHpMultiplier(), config.enemies.scale.maxHpMultiplier);
+});
+
+test('最大レベルに届くと暴れ始める (強く・速くなる)', () => {
+  const { engine, config } = setup();
+  const bonus = config.viewers.levels.maxBonus;
+
+  const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', level: 99 });
+  const before = { attack: circle.attack, speed: circle.speed };
+  assert.strictEqual(circle.maxedAt, null, 'まだ暴れてはいけない');
+
+  engine.levelUp(circle, 1);
+
+  assert.ok(circle.maxedAt != null, '暴れ始めていない');
+  assert.ok(circle.attack > before.attack * bonus.attack * 0.9, '攻撃力が上がっていない');
+  assert.ok(circle.speed > before.speed, '速くなっていない');
+  assert.strictEqual(circle.hp, circle.maxHp, '全快していない');
+});
+
+test('暴れる時間が終わると燃え尽きて消える', () => {
+  const { engine, advance, config } = setup({
+    config: { enemies: { spawn: { initialCount: 0, minAlive: 0, maxAlive: 0, intervalMs: 10_000_000 } } }
+  });
+  const removed = [];
+  engine.on('circle:removed', (event) => removed.push(event));
+
+  engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', level: config.viewers.levels.max });
+  assert.strictEqual(engine.circles.length, 1);
+
+  advance(config.viewers.levels.maxDurationMs - 1000, { steps: 60 });
+  assert.strictEqual(engine.circles.length, 1, '早く消えすぎ');
+
+  advance(2000, { steps: 60 });
+  assert.strictEqual(engine.circles.length, 0, '燃え尽きていない');
+  assert.strictEqual(removed[removed.length - 1].reason, 'burnout');
+});
+
+test('育ちきっていない円は時間では消えない', () => {
+  const { engine, advance, config } = setup({
+    config: { enemies: { spawn: { initialCount: 0, minAlive: 0, maxAlive: 0, intervalMs: 10_000_000 } } }
+  });
+  engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', level: 99 });
+
+  advance(config.viewers.levels.maxDurationMs * 3, { steps: 600 });
+  assert.strictEqual(engine.circles.length, 1, '最大レベルでない円が消えた');
+});
+
+test('HEAL は回復し、暴れている時間を延ばす', () => {
+  const { engine, advance, config } = setup({
+    config: { enemies: { spawn: { initialCount: 0, minAlive: 0, maxAlive: 0, intervalMs: 10_000_000 } } }
+  });
+  const heal = config.items.types.find((t) => t.id === 'heal');
+
+  const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', level: config.viewers.levels.max });
+  circle.hp = 10;
+  const until = circle.burstUntil;
+
+  const item = engine.spawnItem('heal');
+  circle.position.x = item.position.x;
+  circle.position.y = item.position.y;
+  advance(100, { steps: 3 });
+
+  assert.strictEqual(circle.hp, circle.maxHp, '回復していない');
+  assert.ok(circle.burstUntil > until, '暴れる時間が延びていない');
+  assert.ok(circle.burstUntil - until <= heal.effect.extendMs + 1, '延び方が設定より大きい');
+});
+
+test('HEAL を拾い続けても、暴れる時間には上限がある', () => {
+  const { engine, advance, config } = setup({
+    config: { enemies: { spawn: { initialCount: 0, minAlive: 0, maxAlive: 0, intervalMs: 10_000_000 } } }
+  });
+  const heal = config.items.types.find((t) => t.id === 'heal').effect;
+  const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', level: config.viewers.levels.max });
+
+  for (let i = 0; i < 10; i += 1) {
+    const item = engine.spawnItem('heal');
+    circle.position.x = item.position.x;
+    circle.position.y = item.position.y;
+    advance(50, { steps: 2 });
+  }
+
+  const remaining = circle.burstUntil - engine._lastUpdate;
+  assert.ok(remaining <= heal.maxRemainingMs + 100, `残り ${Math.round(remaining)}ms まで延びている`);
+});
+
+test('育ちきっていない円が HEAL を拾っても燃え尽きない', () => {
+  const { engine, advance } = setup({
+    config: { enemies: { spawn: { initialCount: 0, minAlive: 0, maxAlive: 0, intervalMs: 10_000_000 } } }
+  });
+  const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', level: 30 });
+  circle.hp = 100;
+
+  const item = engine.spawnItem('heal');
+  circle.position.x = item.position.x;
+  circle.position.y = item.position.y;
+  advance(100, { steps: 3 });
+
+  assert.strictEqual(circle.hp, circle.maxHp, '回復していない');
+  assert.strictEqual(circle.burstUntil, null, '暴れていないのに時間が設定された');
 });

@@ -136,7 +136,7 @@
       this._drawEnemy(ctx, state.enemies[i], scale);
     }
     for (i = 0; i < state.circles.length; i += 1) {
-      this._drawCircle(ctx, state.circles[i], scale);
+      this._drawCircle(ctx, state.circles[i], scale, now);
     }
     // レベルは円を全部描いたあとに描きます。円と一緒に描くと、
     // あとから描かれた円の下に隠れて読めなくなるためです。
@@ -220,12 +220,14 @@
     ctx.restore();
   };
 
-  Renderer.prototype._drawCircle = function (ctx, circle, scale) {
+  Renderer.prototype._drawCircle = function (ctx, circle, scale, now) {
     var x = circle.position.x * scale;
     var y = circle.position.y * scale;
     var r = circle.radius * scale;
     var hue = ownerHue(circle.ownerId);
     var color = 'hsl(' + hue + ', 90%, 65%)';
+
+    if (circle.maxedAt != null) this._drawAura(ctx, circle, x, y, r, now);
 
     var image = this.avatars ? this.avatars.get(circle.profileImageUrl) : null;
 
@@ -303,7 +305,7 @@
 
     var max = this.engine.maxLevel ? this.engine.maxLevel() : 100;
     var maxed = level >= max;
-    var text = 'Lv' + level;
+    var text = maxed ? 'MAX' : 'Lv' + level;
 
     // 元絵は大きめに作り、貼るときに縮めます (拡大するとぼやけるため)
     var font = 44;
@@ -396,6 +398,45 @@
       ctx.fillText(item.label, x, y + r * 1.35);
       ctx.restore();
     }
+  };
+
+  /**
+   * 最大レベルの円のオーラ。
+   *
+   * 虹色のリングが回り、その外側に「暴れていられる残り時間」が出ます。
+   * 画面のどれが今いちばん危険な円なのかが、ひと目で分かります。
+   */
+  Renderer.prototype._drawAura = function (ctx, circle, x, y, r, now) {
+    var spin = now / 900;
+    var pulse = 1 + Math.sin(now / 160) * 0.05;
+    var outer = r * 1.42 * pulse;
+    var steps = 12;
+
+    ctx.save();
+
+    // 虹色のリング (円弧を 12 本つないで作ります)
+    ctx.lineWidth = Math.max(2.5, r * 0.3);
+    ctx.lineCap = 'butt';
+    for (var i = 0; i < steps; i += 1) {
+      var from = spin + (i / steps) * Math.PI * 2;
+      var to = spin + ((i + 1.15) / steps) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.arc(x, y, outer, from, to);
+      ctx.strokeStyle = 'hsla(' + Math.round((i / steps) * 360 + now / 12) % 360 + ', 100%, 62%, 0.85)';
+      ctx.stroke();
+    }
+
+    // 残り時間 (延ばせるので、いっぱいのときは 1 周のまま)
+    if (circle.burstUntil != null && circle.burstUntil !== Infinity) {
+      var total = this.config.viewers.levels.maxDurationMs;
+      var left = Math.max(0, Math.min(1, (circle.burstUntil - now) / total));
+      ctx.beginPath();
+      ctx.arc(x, y, outer + ctx.lineWidth * 0.9, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * left);
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = Math.max(1.5, r * 0.09);
+      ctx.stroke();
+    }
+    ctx.restore();
   };
 
   Renderer.prototype._drawBursts = function (ctx, scale, now) {
