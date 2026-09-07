@@ -215,13 +215,19 @@
    * 他の敵と重ならない場所を探して返す。
    *
    * 端に大きい敵が居座っていると、そこへ湧いた小さい敵がそのまま
-   * 中に埋まって見えなくなります。数回試して空いている場所を選びます。
+   * 中に埋まって見えなくなります。数回試して空いている場所を選び、
+   * **どこも空いていなければ何も返しません** (今回は湧かせない)。
+   * 無理に置くくらいなら、次の間隔まで待つほうがきれいです。
+   *
+   * @returns {object|null}
    */
   BattleEngine.prototype._freeEdgePosition = function (radius) {
     var best = null;
     var bestClearance = -Infinity;
+    // 少しだけ (半径の 2 割) なら重なりを許す。すぐ押し離されます。
+    var allowed = -radius * 0.2;
 
-    for (var attempt = 0; attempt < 8; attempt += 1) {
+    for (var attempt = 0; attempt < 12; attempt += 1) {
       var pos = this._edgePosition(radius);
       var clearance = Infinity;
 
@@ -236,7 +242,7 @@
       if (clearance > 0) return pos;                 // 誰とも重ならない場所
       if (clearance > bestClearance) { bestClearance = clearance; best = pos; }
     }
-    return best;                                     // 空きが無ければ一番マシな場所
+    return bestClearance >= allowed ? best : null;
   };
 
   /**
@@ -273,6 +279,8 @@
 
     var now = at != null ? at : this.now();
     var pos = this._freeEdgePosition(type.radius);
+    // 置ける場所が無いほど混んでいる。次の間隔まで待ちます。
+    if (!pos) return null;
     var heading = this._launchHeading(pos);
 
     var enemy = {
@@ -735,7 +743,10 @@
             this._damageCircle(circle, enemy.attack);
           }
           // 敵にも跳ね返る。倒した相手からは跳ねません (もう居ないので)。
-          if (!enemy.dead && !circle.dead) this._resolveContact(circle, enemy, dt);
+          // 既定では敵は押されません (collision.enemiesArePushed)。
+          if (!enemy.dead && !circle.dead) {
+            this._resolveContact(circle, enemy, dt, !this.config.collision.enemiesArePushed);
+          }
           if (circle.dead) break;        // 力尽きた円はもう動かない
         }
       }
@@ -844,7 +855,7 @@
    * 円が止まってしまわないようにするためです。向きだけが変わり、
    * 速さは変わらないので、動きは等速のまま読めます。
    */
-  BattleEngine.prototype._resolveContact = function (a, b, dt) {
+  BattleEngine.prototype._resolveContact = function (a, b, dt, bIsFixed) {
     var collision = this.config.collision;
 
     var dx = b.position.x - a.position.x;
@@ -867,6 +878,11 @@
 
     var ma = collision.massFromRadius ? a.radius * a.radius : 1;
     var mb = collision.massFromRadius ? b.radius * b.radius : 1;
+    // bIsFixed のときは b を「動かないもの」として扱う (壁と同じ)
+    var invMa = 1 / ma;
+    var invMb = bIsFixed ? 0 : 1 / mb;
+    var shareA = bIsFixed ? 1 : mb / (ma + mb);
+    var shareB = bIsFixed ? 0 : ma / (ma + mb);
 
     // --- 1. 押し離す
     //
@@ -879,9 +895,11 @@
     var overlap = min - dist;
     var step = Math.min(overlap, Math.max(collision.separation * dt, overlap * collision.separationRatio));
 
-    var shortfall = this._push(a, -nx, -ny, step * (mb / (ma + mb)));
-    shortfall = this._push(b, nx, ny, step * (ma / (ma + mb)) + shortfall);
-    if (shortfall > 0) this._push(a, -nx, -ny, shortfall);
+    var shortfall = this._push(a, -nx, -ny, step * shareA);
+    if (!bIsFixed) {
+      shortfall = this._push(b, nx, ny, step * shareB + shortfall);
+      if (shortfall > 0) this._push(a, -nx, -ny, shortfall);
+    }
 
     if (!collision.bounce) return true;
 
@@ -891,16 +909,18 @@
     var along = rvx * nx + rvy * ny;
     if (along > 0) return true;          // すでに離れつつある。二重に跳ねさせない。
 
-    var impulse = -(1 + collision.restitution) * along / (1 / ma + 1 / mb);
+    var impulse = -(1 + collision.restitution) * along / (invMa + invMb);
 
-    a.velocity.x -= impulse * nx / ma;
-    a.velocity.y -= impulse * ny / ma;
-    b.velocity.x += impulse * nx / mb;
-    b.velocity.y += impulse * ny / mb;
+    a.velocity.x -= impulse * nx * invMa;
+    a.velocity.y -= impulse * ny * invMa;
+    if (!bIsFixed) {
+      b.velocity.x += impulse * nx * invMb;
+      b.velocity.y += impulse * ny * invMb;
+    }
 
     if (collision.keepSpeed) {
       this._restoreSpeed(a);
-      this._restoreSpeed(b);
+      if (!bIsFixed) this._restoreSpeed(b);
     }
     return true;
   };
@@ -956,14 +976,26 @@
 
     var cell = Math.max(maxRadius * 2, 1);
     var columns = Math.max(1, Math.ceil(this.field.width / cell));
-    var buckets = {};
+
+    // 升は毎フレーム作り直さず、中身だけ空にして使い回します。
+    // 毎フレーム数百の配列を捨てると、その掃除でときどきフレームが伸びます。
+    if (!this._buckets) { this._buckets = new Map(); this._bucketPool = []; }
+    var buckets = this._buckets;
+    var pool = this._bucketPool;
+    buckets.forEach(function (bucket) { bucket.length = 0; pool.push(bucket); });
+    buckets.clear();
 
     for (i = 0; i < list.length; i += 1) {
       var entity = list[i];
       var cx = Math.floor(entity.position.x / cell);
       var cy = Math.floor(entity.position.y / cell);
       var key = cy * (columns + 2) + cx;
-      (buckets[key] || (buckets[key] = [])).push(entity);
+      var bucket = buckets.get(key);
+      if (!bucket) {
+        bucket = pool.pop() || [];
+        buckets.set(key, bucket);
+      }
+      bucket.push(entity);
       entity._cx = cx;
       entity._cy = cy;
     }
@@ -974,7 +1006,7 @@
 
     for (i = 0; i < list.length; i += 1) {
       var a = list[i];
-      var own = buckets[a._cy * (columns + 2) + a._cx];
+      var own = buckets.get(a._cy * (columns + 2) + a._cx);
 
       var j;
       for (j = own.indexOf(a) + 1; j < own.length; j += 1) {
@@ -982,7 +1014,7 @@
       }
 
       for (var n = 0; n < NEIGHBORS.length; n += 1) {
-        var near = buckets[(a._cy + NEIGHBORS[n][1]) * (columns + 2) + (a._cx + NEIGHBORS[n][0])];
+        var near = buckets.get((a._cy + NEIGHBORS[n][1]) * (columns + 2) + (a._cx + NEIGHBORS[n][0]));
         if (!near) continue;
         for (j = 0; j < near.length; j += 1) this._resolveContact(a, near[j], dt);
       }

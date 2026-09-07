@@ -16,12 +16,17 @@
   var FAILED = 'failed';
 
   /**
-   * @param {object} [options] { max } 覚えておく枚数の上限
+   * @param {object} [options] { max, size } 覚えておく枚数の上限と、丸く切った画像の大きさ
    */
   function AvatarCache(options) {
     options = options || {};
     this.max = options.max || 400;
-    this.entries = {};        // url -> { status, image, usedAt }
+    /**
+     * 丸く切り抜いた画像を作っておく大きさ (px)。
+     * 画面に出る円は最大でも 100px 程度なので、これで足ります。
+     */
+    this.size = options.size || 128;
+    this.entries = {};        // url -> { status, image, masked, usedAt }
     this.stats = { hits: 0, misses: 0, loaded: 0, failed: 0 };
   }
 
@@ -35,13 +40,42 @@
     var entry = this.entries[url];
     if (entry) {
       entry.usedAt = Date.now();
-      if (entry.status === READY) { this.stats.hits += 1; return entry.image; }
+      if (entry.status === READY) { this.stats.hits += 1; return entry.masked || entry.image; }
       return null;                       // 読み込み中 / 失敗
     }
 
     this.stats.misses += 1;
     this._load(url);
     return null;
+  };
+
+  /**
+   * 丸く切り抜いた画像を 1 枚だけ作っておく。
+   *
+   * 描くたびに円で切り抜く (ctx.clip) と、円が数百個あるフレームでは
+   * それだけで重くなります。最初に 1 回だけ切り抜いておけば、
+   * あとは切り抜き済みの絵を貼るだけで済みます。
+   */
+  AvatarCache.prototype._mask = function (image) {
+    if (typeof document === 'undefined' || !document.createElement) return null;
+
+    var size = this.size;
+    var canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    var ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+    ctx.clip();
+
+    // 正方形でない画像でも顔が伸びないよう、短い辺で中央を切り出す
+    var iw = image.naturalWidth || image.width || size;
+    var ih = image.naturalHeight || image.height || size;
+    var side = Math.min(iw, ih);
+    ctx.drawImage(image, (iw - side) / 2, (ih - side) / 2, side, side, 0, 0, size, size);
+    return canvas;
   };
 
   AvatarCache.prototype._load = function (url) {
@@ -58,6 +92,7 @@
     image.onload = function () {
       entry.status = READY;
       entry.image = image;
+      entry.masked = self._mask(image);
       self.stats.loaded += 1;
     };
     image.onerror = function () {

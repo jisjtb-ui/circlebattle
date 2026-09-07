@@ -173,7 +173,13 @@ test('倒すとランキングが自動で更新される', () => {
 });
 
 test('ダメージにもスコアを付けられる (設定)', () => {
-  const { engine, leaderboard, advance } = setup({ config: { scoring: { pointsPerDamage: 0.5 } } });
+  // 他の敵を倒して撃破ポイントが混ざらないよう、補充を止めて 1 体だけにする
+  const { engine, leaderboard, advance } = setup({
+    config: {
+      scoring: { pointsPerDamage: 0.5 },
+      enemies: { spawn: { initialCount: 0, minAlive: 0, maxAlive: 0, intervalMs: 10_000_000 } }
+    }
+  });
   engine.enemies.length = 0;
 
   const enemy = engine.spawnEnemy('boss');

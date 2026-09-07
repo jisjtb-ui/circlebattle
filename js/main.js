@@ -92,14 +92,17 @@
       sfx.play(byEvent[spawn.sourceEvent] || 'spawn');
     });
 
-    // 1 位が入れ替わったときだけ鳴らす (順位が動くたびに鳴らすとうるさい)
+    // 1 位が入れ替わったときだけ鳴らす (順位が動くたびに鳴らすとうるさい)。
+    //
+    // 判定はフレームに 1 回だけです。ランキングはダメージが入るたびに更新されるので
+    // (100 人規模だと毎秒 500 回)、更新のたびに並べ替えると描画より重くなります。
     var leaderId = null;
-    leaderboard.on(function (board) {
-      var top = board.top(1)[0];
+    function checkLeader() {
+      var top = renderer.top && renderer.top[0];       // 描画側が並べ替えた結果を借りる
       var id = top ? top.userId : null;
       if (id && leaderId && id !== leaderId) sfx.play('rank');
       leaderId = id;
-    });
+    }
 
     // ブラウザは操作前の自動再生を止める。止められている間だけバッジを出し、
     // 最初のクリック / キー操作で鳴らし始める。
@@ -173,6 +176,7 @@
       demo.update(now);
       engine.update(now);
       renderer.draw(now);
+      checkLeader();
       global.requestAnimationFrame(frame);
     }
     global.requestAnimationFrame(frame);

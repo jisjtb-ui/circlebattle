@@ -123,8 +123,7 @@
     var w = this._cssWidth;
     var h = this._cssHeight;
 
-    ctx.clearRect(0, 0, w, h);
-    this._drawBackground(ctx, w, h);
+    this._drawBackground(ctx, w, h);      // 不透明なので clearRect は要りません
 
     var state = this.engine.getState();
     var i;
@@ -144,23 +143,40 @@
     this.renderRanking();
   };
 
+  /**
+   * 背景 (下地と罫線) は毎フレーム同じなので、1 枚作っておいて貼るだけにします。
+   * 下地は不透明なので、貼れば前のフレームも消えます (clearRect が要りません)。
+   */
   Renderer.prototype._drawBackground = function (ctx, w, h) {
-    ctx.save();
-    ctx.fillStyle = 'rgba(9, 10, 24, 0.92)';
-    ctx.fillRect(0, 0, w, h);
+    if (!this._bg || this._bgWidth !== w || this._bgHeight !== h) {
+      var canvas = document.createElement('canvas');
+      var dpr = global.devicePixelRatio || 1;
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+      var bg = canvas.getContext('2d');
+      bg.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    ctx.strokeStyle = 'rgba(120, 140, 255, 0.10)';
-    ctx.lineWidth = 1;
-    var step = w / 10;
-    for (var i = 1; i < 10; i += 1) {
-      ctx.beginPath();
-      ctx.moveTo(i * step, 0);
-      ctx.lineTo(i * step, h);
-      ctx.moveTo(0, i * step);
-      ctx.lineTo(w, i * step);
-      ctx.stroke();
+      bg.fillStyle = '#090a18';
+      bg.fillRect(0, 0, w, h);
+
+      bg.strokeStyle = 'rgba(120, 140, 255, 0.10)';
+      bg.lineWidth = 1;
+      var step = w / 10;
+      for (var i = 1; i < 10; i += 1) {
+        bg.beginPath();
+        bg.moveTo(i * step, 0);
+        bg.lineTo(i * step, h);
+        bg.moveTo(0, i * step);
+        bg.lineTo(w, i * step);
+        bg.stroke();
+      }
+
+      this._bg = canvas;
+      this._bgWidth = w;
+      this._bgHeight = h;
     }
-    ctx.restore();
+
+    ctx.drawImage(this._bg, 0, 0, w, h);
   };
 
   Renderer.prototype._drawEnemy = function (ctx, enemy, scale) {
@@ -213,15 +229,9 @@
     ctx.arc(x, y, r, 0, Math.PI * 2);
 
     if (image) {
-      // 画像は円の中だけに描く (はみ出さないように切り抜く)。
-      // 正方形でない画像でも顔が伸びないよう、短い辺に合わせて中央を切り出します。
-      ctx.save();
-      ctx.clip();
-      var iw = image.naturalWidth || image.width || 1;
-      var ih = image.naturalHeight || image.height || 1;
-      var side = Math.min(iw, ih);
-      ctx.drawImage(image, (iw - side) / 2, (ih - side) / 2, side, side, x - r, y - r, r * 2, r * 2);
-      ctx.restore();
+      // 画像はキャッシュ側で丸く切り抜き済み。ここでは貼るだけです。
+      // 毎フレーム ctx.clip() を呼ぶと、円が数百個あるときに効いてきます。
+      ctx.drawImage(image, x - r, y - r, r * 2, r * 2);
     } else {
       // 取れなかった / まだ読み込めていない場合の既定アイコン
       ctx.fillStyle = 'hsl(' + hue + ', 60%, 28%)';
@@ -387,6 +397,8 @@
 
     var top = this.leaderboard.top();
     var metric = this.leaderboard.sortBy;
+    /** いま画面に出ている順位。並べ替えを何度もやらないよう、他からはこれを見ます。 */
+    this.top = top;
 
     if (this.el.rankingMetric) this.el.rankingMetric.textContent = metric.toUpperCase();
     if (this.el.rankingEmpty) this.el.rankingEmpty.hidden = top.length > 0;
