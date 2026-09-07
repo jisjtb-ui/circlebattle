@@ -22,6 +22,10 @@ TikTok の接続部分は **KAWAII VS BEAUTIFUL / tikhub で作ったものを�
 
 ---
 
+**詳しい仕様は [`docs/SPEC.md`](docs/SPEC.md) にまとめてあります。**
+
+---
+
 ## 1. 動かす
 
 `index.html` をブラウザで開くだけです (`file://` で動きます)。
