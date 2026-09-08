@@ -492,6 +492,16 @@
     if (levels.joinOncePerUser && player.joined) return null;
     player.joined = true;
 
+    /**
+     * 入ってきたことを**受け取ったこの瞬間**に知らせます。
+     *
+     * 円が出るのは大砲が撃ったあとで、混んでいれば数秒あとになります。
+     * 'spawn' だけに任せると「今わたしが入った」が画面に出るまで間が
+     * あくので、円とは別にここで 1 回だけ流します。2 回目以降の入室では
+     * 流れません (出入りするだけで何度も名前が出てしまうため)。
+     */
+    this.emit('join', { user: user, level: levels.join, at: at });
+
     return this._spawnOrQueue(user, { level: levels.join, sourceEvent: 'JOIN', at: at });
   };
 

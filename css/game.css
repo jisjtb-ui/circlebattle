@@ -556,6 +556,99 @@ html, body {
   to   { opacity: 1; transform: translate(-50%, 0); }
 }
 
+/* ------------------------------------------------------- JOIN の名前 */
+
+/*
+ * 入室を受け取った**その瞬間**に、名前を画面の真ん中へ出します。
+ *
+ * 「目立つ」と「邪魔にならない」は、板を敷かないことで両立させています。
+ * 文字の後ろにあるのは端に向かって消えていく暈しだけなので、出ている間も
+ * 盤面が透けて見えます。時間も 1 秒ほどで、次の入室が来ても重ねません
+ * (順番に 1 人ずつ / js/join-banner.js)。
+ *
+ * 表示時間は混み具合で変わるので、animation-duration は renderer が
+ * その都度入れます。ここでは形と動きだけを決めます。
+ */
+/*
+ * 外枠は画面いっぱい。left:50% だけで中央に寄せると、そこから右端までの
+ * 幅しか使えず、長い名前が実際より早く切れます。
+ */
+.join-banner {
+  position: absolute;
+  top: 50%;
+  left: 3%;
+  right: 3%;
+  transform: translateY(-50%);
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+}
+
+/* 文字を包む箱。中身のぶんだけ広がります */
+.join-banner__box {
+  display: grid;
+  justify-items: center;
+  gap: clamp(2px, 0.5dvh, 8px);
+  max-width: 100%;
+  min-width: 0;
+  padding: clamp(10px, 2.6dvh, 38px) clamp(20px, 8vw, 78px);
+  /* 板ではなく暈し。外へ向かって完全に透明になります */
+  background: radial-gradient(ellipse at center,
+    rgba(4, 6, 18, 0.86) 0%,
+    rgba(4, 6, 18, 0.5) 42%,
+    rgba(4, 6, 18, 0) 72%);
+}
+
+/* WAVE などの中央バナーが出ている間だけ下へ逃がします (重ねない) */
+.join-banner--low { top: 70%; }
+
+.join-banner__name {
+  max-width: 100%;
+  font-size: clamp(26px, 6dvh, 88px);
+  font-weight: 900;
+  line-height: 1.04;
+  letter-spacing: 0.01em;
+  color: #fff;
+  /* 光は config.ui.join.color (#fbbf24) と揃えてあります */
+  text-shadow: 0 0 30px rgba(251, 191, 36, 0.75), 0 2px 12px rgba(0, 0, 0, 0.9);
+  /* 長い名前でも画面からはみ出させません */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.join-banner__label {
+  font-size: clamp(11px, 1.9dvh, 26px);
+  font-weight: 900;
+  letter-spacing: 0.42em;
+  text-indent: 0.42em;                 /* 字間のぶんだけ右にずれるのを戻す */
+  color: #fbbf24;
+  text-shadow: 0 0 20px rgba(251, 191, 36, 0.6);
+}
+
+/* 一度に入りきらなかった人数。0 人のときは出しません */
+.join-banner__more {
+  font-size: clamp(9px, 1.3dvh, 16px);
+  letter-spacing: 0.2em;
+  color: var(--muted);
+}
+
+.join-banner--in {
+  animation-name: join-pop;
+  animation-timing-function: cubic-bezier(0.16, 0.84, 0.36, 1);
+  animation-fill-mode: forwards;
+}
+
+@keyframes join-pop {
+  0%   { opacity: 0; transform: translateY(-50%) scale(0.82); }
+  12%  { opacity: 1; transform: translateY(-50%) scale(1.05); }
+  22%  { transform: translateY(-50%) scale(1); }
+  74%  { opacity: 1; transform: translateY(-50%) scale(1); }
+  100% { opacity: 0; transform: translateY(-50%) scale(1.06); }
+}
+
 /* --------------------------------------------------------- LIVE EVENT */
 
 /*

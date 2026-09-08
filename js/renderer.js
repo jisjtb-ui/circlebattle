@@ -38,6 +38,17 @@
     return text.charAt(0).toUpperCase() || '?';
   }
 
+  /**
+   * 長い名前を切り詰める。
+   *
+   * 大砲は画面の端にあるので、長い名前をそのまま出すと画面の外へ出て
+   * 読めなくなります。切るなら前を残します (@ から数文字で誰か分かるため)。
+   */
+  function clip(name, max) {
+    var text = String(name || '');
+    return text.length > max ? text.slice(0, max - 1) + '\u2026' : text;
+  }
+
   function Renderer(engine, options) {
     options = options || {};
     this.engine = engine;
@@ -81,6 +92,10 @@
       stageBanner: $('stage-banner'),
       stageBannerMain: $('stage-banner-main'),
       stageBannerSub: $('stage-banner-sub'),
+      joinBanner: $('join-banner'),
+      joinBannerName: $('join-banner-name'),
+      joinBannerLabel: $('join-banner-label'),
+      joinBannerMore: $('join-banner-more'),
       status: $('status'),
       statusText: $('status-text')
     };
@@ -103,6 +118,12 @@
     this._sparks = [];
     /** 円を撃ち出す大砲 (js/cannon.js)。状態を読んで描くだけです。 */
     this.cannon = options.cannon || null;
+    /** 入室した人の名前を中央に出す係 (js/join-banner.js)。同じく読むだけです。 */
+    this.joinBanner = options.joinBanner || null;
+    /** 今 DOM に出している名前の通し番号。変わったときだけ出し直します。 */
+    this._joinSerial = -1;
+    /** 中央バナーと重ならないように下へ逃がしているか。 */
+    this._joinLow = false;
 
     /**
      * 武器の見た目。レベルだけを見て描き、ステータスには一切触りません。
@@ -248,6 +269,7 @@
     }
     this._drawBursts(ctx, scale, now);
     this._drawFloats(ctx, scale, now);
+    this._syncJoinBanner(now);
     this._drawHud(state);
     this.renderRanking();
     this._expireEvents(now);
@@ -803,7 +825,7 @@
       lineY -= size * 1.15;
     };
 
-    write('@' + shot.user.uniqueId, px, '#ffffff');
+    write('@' + clip(shot.user.uniqueId, 16), px, '#ffffff');
     if (notice && notice.main) {
       write(notice.sub, px * 0.8, '#94a3b8');
       write(notice.main, px * 1.1, shot.type.color);
@@ -1432,6 +1454,61 @@
       if (now - this._events[i].at < life) continue;
       var gone = this._events.splice(i, 1)[0];
       if (gone.el.parentNode) gone.el.parentNode.removeChild(gone.el);
+    }
+  };
+
+  /**
+   * 入室した人の名前を画面中央に出す。
+   *
+   * **誰を出すかは決めません。** js/join-banner.js が持っている「今この人」を
+   * 読んで DOM に写すだけです。ここで順番や時間を持たせると、画面が 2 つある
+   * ときに別々の名前が出てしまいます。
+   *
+   * canvas ではなく DOM に出すのは、盤面をどれだけ拡大しても文字がぼやけず、
+   * 縦長でも横長でも中央に居続けるからです。
+   */
+  Renderer.prototype._syncJoinBanner = function (now) {
+    var el = this.el.joinBanner;
+    if (!el || !this.joinBanner) return;
+
+    var shown = this.joinBanner.active(now);
+    if (!shown) {
+      if (!el.hidden) {
+        el.hidden = true;
+        this._joinSerial = -1;
+      }
+      return;
+    }
+
+    if (shown.serial !== this._joinSerial) {
+      this._joinSerial = shown.serial;
+      this.el.joinBannerName.textContent = '@' + shown.name;
+      if (this.el.joinBannerLabel) {
+        this.el.joinBannerLabel.textContent = this.config.ui.join.banner.label || 'JOIN';
+      }
+      // あふれたぶんの人数。0 のときは行ごと消します (空行が残ると位置がずれます)
+      var more = this.el.joinBannerMore;
+      if (more) {
+        more.textContent = shown.more > 0 ? '+' + shown.more + ' MORE JOINED' : '';
+        more.hidden = !(shown.more > 0);
+      }
+
+      // 出す時間は混み具合で変わるので、アニメーションもその長さに合わせます。
+      // 固定にすると、短い表示のときに消えたあとも動きだけが残ります。
+      el.style.animationDuration = Math.max(1, shown.until - shown.shownAt) + 'ms';
+      el.hidden = false;
+      el.classList.remove('join-banner--in');
+      void el.offsetWidth;               // アニメーションをやり直させる
+      el.classList.add('join-banner--in');
+    }
+
+    // WAVE などの中央バナーが出ている間だけ下へ逃がします。真ん中で重ねると
+    // どちらも読めなくなり、「目立つ」どころではなくなります。
+    var busy = Boolean(this.el.stageBanner && !this.el.stageBanner.hidden);
+    if (busy !== this._joinLow) {
+      this._joinLow = busy;
+      if (busy) el.classList.add('join-banner--low');
+      else el.classList.remove('join-banner--low');
     }
   };
 

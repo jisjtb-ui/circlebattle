@@ -54,6 +54,7 @@
       leaderboard: app.leaderboard,
       avatars: app.avatars,
       cannon: app.cannon,
+      joinBanner: app.joinBanner,
       doc: doc,
       win: win,
       primary: Boolean(options.primary)

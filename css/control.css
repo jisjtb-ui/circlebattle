@@ -309,6 +309,78 @@ button:hover { background: #262c5c; }
 
 .stage-banner--in { animation: stage-pop 2000ms ease-out forwards; }
 
+/*
+ * 入室した人の名前 (プレビューにも同じものを出します)。
+ * ここは小さい確認用なので寸法だけ落とし、動きと消え方は本番と同じです。
+ */
+.join-banner {
+  position: absolute;
+  top: 50%;
+  left: 3%;
+  right: 3%;
+  transform: translateY(-50%);
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.join-banner__box {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 10px 22px;
+  background: radial-gradient(ellipse at center,
+    rgba(4, 6, 18, 0.86) 0%,
+    rgba(4, 6, 18, 0.5) 42%,
+    rgba(4, 6, 18, 0) 72%);
+}
+
+.join-banner--low { top: 70%; }
+
+.join-banner__name {
+  max-width: 100%;
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1.05;
+  color: #fff;
+  text-shadow: 0 0 18px rgba(251, 191, 36, 0.75), 0 2px 8px rgba(0, 0, 0, 0.9);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.join-banner__label {
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.42em;
+  text-indent: 0.42em;
+  color: #fbbf24;
+}
+
+.join-banner__more {
+  font-size: 8px;
+  letter-spacing: 0.2em;
+  color: var(--muted);
+}
+
+.join-banner--in {
+  animation-name: join-pop;
+  animation-timing-function: cubic-bezier(0.16, 0.84, 0.36, 1);
+  animation-fill-mode: forwards;
+}
+
+@keyframes join-pop {
+  0%   { opacity: 0; transform: translateY(-50%) scale(0.82); }
+  12%  { opacity: 1; transform: translateY(-50%) scale(1.05); }
+  22%  { transform: translateY(-50%) scale(1); }
+  74%  { opacity: 1; transform: translateY(-50%) scale(1); }
+  100% { opacity: 0; transform: translateY(-50%) scale(1.06); }
+}
+
 @keyframes stage-pop {
   0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.82); }
   12%  { opacity: 1; transform: translate(-50%, -50%) scale(1.04); }

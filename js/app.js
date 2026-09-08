@@ -46,6 +46,15 @@
       ? new CB.Cannon({ config: config, engine: engine, session: session })
       : null;
     if (cannon) session.launcher = cannon;
+
+    // 入室を受け取った瞬間に中央へ出す名前 (js/join-banner.js)。
+    // **ここで 1 回だけ繋ぎます。** 画面ごとに繋ぐと、操作画面とゲーム
+    // ウィンドウの 2 つから同じ入室を入れてしまい、名前が 2 回出ます。
+    var joinBanner = CB.JoinBanner ? new CB.JoinBanner({ config: config }) : null;
+    if (joinBanner) {
+      session.on('join', function (join) { joinBanner.push(join.user, join.at); });
+    }
+
     var router = new CB.EventRouter({ config: config });
     router.attach(liveId, session);
 
@@ -65,6 +74,7 @@
       demo: demo,
       director: director,
       cannon: cannon,
+      joinBanner: joinBanner,
       tiktok: tiktok,
 
       /** 接続状態。画面はここを読んで表示します。 */
@@ -164,6 +174,8 @@
       // 大砲はゲームのループとは別に進みます。ここが詰まっても敵の生成も
       // 戦闘も止まりませんし、逆にここでゲームを止めることもありません。
       if (app.cannon) app.cannon.update(now);
+      // 名前を出す順番も、ゲームのループとは別に進みます。
+      if (app.joinBanner) app.joinBanner.update(now);
       app.engine.update();
       return true;
     };
@@ -175,6 +187,7 @@
       app.session.reset();
       if (app.director) app.director.reset();
       if (app.cannon) app.cannon.reset();
+      if (app.joinBanner) app.joinBanner.reset();
     };
 
     return app;
