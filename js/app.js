@@ -39,6 +39,13 @@
       leaderboard: leaderboard,
       liveId: liveId
     });
+
+    // 円を撃ち出す大砲。session の生成口をこれに繋ぐと、以後すべての円が
+    // 大砲から出るようになります。描くのは renderer の役目です。
+    var cannon = CB.Cannon
+      ? new CB.Cannon({ config: config, engine: engine, session: session })
+      : null;
+    if (cannon) session.launcher = cannon;
     var router = new CB.EventRouter({ config: config });
     router.attach(liveId, session);
 
@@ -57,6 +64,7 @@
       avatars: avatars,
       demo: demo,
       director: director,
+      cannon: cannon,
       tiktok: tiktok,
 
       /** 接続状態。画面はここを読んで表示します。 */
@@ -153,6 +161,9 @@
 
       app.demo.update();
       if (app.director) app.director.update();
+      // 大砲はゲームのループとは別に進みます。ここが詰まっても敵の生成も
+      // 戦闘も止まりませんし、逆にここでゲームを止めることもありません。
+      if (app.cannon) app.cannon.update(now);
       app.engine.update();
       return true;
     };
@@ -163,6 +174,7 @@
       app.leaderboard.reset();
       app.session.reset();
       if (app.director) app.director.reset();
+      if (app.cannon) app.cannon.reset();
     };
 
     return app;

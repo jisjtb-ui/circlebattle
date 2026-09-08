@@ -53,6 +53,7 @@
       config: config,
       leaderboard: app.leaderboard,
       avatars: app.avatars,
+      cannon: app.cannon,
       doc: doc,
       win: win,
       primary: Boolean(options.primary)
@@ -158,6 +159,15 @@
       if (hit.source === 'weapon') renderer.attackEffect(hit.circle, hit.enemy);
     });
 
+    // 大砲が撃った。煙と粒はここで撒きます (音も一緒に)。
+    // 演出の中身は renderer が持っていて、cannon はルールだけを持ちます。
+    if (app.cannon) {
+      listen(app.cannon, 'fire', function (event) {
+        renderer.cannonBurst(event.muzzle, app.cannon.aim(), event.shot.type);
+        play(SPAWN_SFX[event.shot.sourceEvent] || 'spawn');
+      });
+    }
+
     // 最終形態の衝撃波。射程内の敵を巻き込んだときだけ出ます
     listen(engine, 'weapon:nova', function (burst) {
       var circle = burst.circle;
@@ -221,7 +231,8 @@
 
     // 生まれた。**自分の円が出たことが分かる**のが、次の LIKE を押す理由になります。
     listen(session, 'spawn', function (spawn) {
-      play(SPAWN_SFX[spawn.sourceEvent] || 'spawn');
+      // 音は大砲が撃つときに鳴らします (大砲を使わない構成のときだけここで)
+      if (!app.cannon) play(SPAWN_SFX[spawn.sourceEvent] || 'spawn');
 
       // 入室は 1 人 1 回だけの「初めまして」なので、他の生まれ方と分けて出します。
       // 円のほうにも光る輪が出るので (renderer)、どれが自分か分かります。
@@ -230,7 +241,9 @@
         joined ? 'JOINED → Lv' + spawn.level : spawn.sourceEvent + ' → Lv' + spawn.level,
         joined ? 'join' : 'spawn');
 
-      if (joined && spawn.circle) {
+      // 大砲があるときは、装填中に「NEW PLAYER / @名前」を出しているので
+      // ここでは出しません。砲口に何人ぶんも重なって読めなくなります。
+      if (joined && spawn.circle && !app.cannon) {
         var color = config.ui.join.color;
         renderer.float('WELCOME', spawn.circle.position.x, above(spawn.circle),
           { color: color, size: 34 });

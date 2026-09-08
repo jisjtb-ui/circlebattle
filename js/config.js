@@ -69,6 +69,78 @@
     },
 
     /**
+     * PLAYER CANNON - 円の出てくる場所。
+     *
+     * **視聴者の円はすべてここから撃ち出されます。** フィールドのどこかに
+     * ぽんと現れるのではなく、端の大砲から中央へ向かって飛び込むことで、
+     * 「今この人が入ってきた」という因果が画面から読み取れます。
+     *
+     * 演出は engine のループとは別に進みます (js/cannon.js)。撃つ順番待ちが
+     * 溜まっても、敵の生成も戦闘も止まりません。待ちが増えたときは装填を
+     * 短くし、それでも追いつかないときは演出を飛ばして即座に撃ちます。
+     * **入れなくなる人が出ないことを、演出の見栄えより優先します。**
+     */
+    cannon: {
+      enabled: true,
+
+      /** 置く場所 (フィールドに対する割合)。左下が既定。 */
+      anchor: { x: 0.15, y: 0.88 },
+      /** 砲身の長さ (フィールド座標)。通常時の大きさの基準になります。 */
+      size: 104,
+      /** 通常時と発射時の大きさの倍率。通常時は邪魔にならない大きさに。 */
+      idleScale: 0.72,
+      loadScale: 1,
+      fireScale: 1.28,
+
+      /** 段階の長さ (ミリ秒)。合計がそのまま 1 発ぶんの時間です。 */
+      loadMs: 430,
+      fireMs: 140,
+      recoverMs: 170,
+
+      /**
+       * 順番待ちがこの数を超えたら、装填を短くして早く捌きます。
+       * 演出の丁寧さより、待たされないことを優先します。
+       */
+      burstAt: 3,
+      burstLoadMs: 90,
+      burstRecoverMs: 50,
+      /** これも超えたら演出を飛ばして即発射 (位置と向きは大砲のまま)。 */
+      maxQueue: 14,
+
+      /** 飛んでいる間 (ミリ秒)。この間は戦わず、ぶつかりもしません。 */
+      launchMs: 430,
+      /** 飛んでいる間の速さの倍率。撃ち出された感を出すため。 */
+      launchSpeed: 2.6,
+      /** 発射方向のばらつき (ラジアン)。0 だと全部同じ線に並びます。 */
+      spreadRad: 0.3,
+      /**
+       * 発射の勢いのばらつき (割合)。
+       * 同じ速さで撃つと、続けて撃ったぶんが団子になって飛びます。
+       */
+      speedJitter: 0.22,
+
+      /**
+       * 演出の種類。**今は normal だけを使います。**
+       * 特別な演出を足すときは、ここに 1 つ書いて typeByEvent から指すだけです。
+       */
+      types: {
+        normal: { label: 'PLAYER CANNON', color: '#22d3ee', scale: 1, particles: 14, shockwave: 1 },
+        special: { label: 'SPECIAL ENTRY', color: '#fbbf24', scale: 1.35, particles: 26, shockwave: 1.6 },
+        legendary: { label: 'LEGENDARY ENTRY', color: '#f472b6', scale: 1.7, particles: 40, shockwave: 2.2 }
+      },
+      /** どのイベントでどの種類を使うか。今はすべて normal。 */
+      typeByEvent: {
+        JOIN: 'normal', LIKE: 'normal', FOLLOW: 'normal', SHARE: 'normal', GIFT: 'normal'
+      },
+
+      /** 装填中に出す文字。入室だけは「初めまして」なので別の文言にします。 */
+      notice: {
+        JOIN: { main: 'NEW PLAYER', sub: 'ENTERED THE BATTLE' },
+        default: { main: null, sub: null }
+      }
+    },
+
+    /**
      * 武器の進化。
      *
      * 武器は円のまわりを**回りながら、当たった敵を斬ります**。当たり判定は

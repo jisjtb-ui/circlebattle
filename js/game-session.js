@@ -43,6 +43,12 @@
     this.realEventSeen = false;
     /** userId -> { count, at } 連続撃破。短い間に続けて倒すと伸びます。 */
     this.combos = {};
+    /**
+     * 円を撃ち出す大砲 (js/cannon.js)。付いていれば、円の生成はすべて
+     * そこを通ります。付いていなければ今までどおりその場で生成します
+     * (テストや、演出を使わない構成のため)。
+     */
+    this.launcher = options.launcher || null;
 
     this.stats = { likes: 0, follows: 0, shares: 0, gifts: 0, joins: 0, comments: 0, circles: 0 };
     this._listeners = {};
@@ -230,15 +236,28 @@
    *
    * @returns {object|null} 出せた円。順番待ちになった場合は null
    */
+  /** その人が今フィールドに持っている数 (大砲の中で待っているぶんも数えます)。 */
+  GameSession.prototype.circleCountOf = function (ownerId) {
+    var count = this.engine.circleCountOf(ownerId);
+    if (this.launcher) count += this.launcher.pendingCount(ownerId);
+    return count;
+  };
+
   GameSession.prototype._spawnOrQueue = function (user, spec) {
     var limits = this.config.viewers.limits;
-    var player = this._player(user.id);
 
-    if (this.engine.circleCountOf(user.id) < limits.maxPerUser) {
+    if (this.circleCountOf(user.id) < limits.maxPerUser) {
       return this.spawnFor(user, spec);
     }
+    return this._queueOnly(user, spec);
+  };
 
+  /** 順番待ちの列に積むだけ (フィールドにも大砲にも入れません)。 */
+  GameSession.prototype._queueOnly = function (user, spec) {
+    var limits = this.config.viewers.limits;
+    var player = this._player(user.id);
     var max = this.config.viewers.levels.max;
+
     if (player.queue.length < limits.queue) {
       player.queue.push({ level: Math.min(spec.level, max), sourceEvent: spec.sourceEvent });
     } else {
@@ -272,7 +291,9 @@
 
     var player = this.players[ownerId];
     if (!player || !player.queue.length) return null;
-    if (this.engine.circleCountOf(ownerId) >= this.config.viewers.limits.maxPerUser) return null;
+    // 大砲の中で待っているぶんも数えます。数えないと、1 つ倒れたときに
+    // 列からも大砲からも出てきて、保有上限を超えます。
+    if (this.circleCountOf(ownerId) >= this.config.viewers.limits.maxPerUser) return null;
 
     var next = player.queue.shift();
     var user = this.users[ownerId];
@@ -307,6 +328,17 @@
     var circle = player.circleId ? this.engine.circleOf(user.id, player.circleId) : null;
     var max = this.config.viewers.levels.max;
 
+    // 大砲の中で待っている弾があるなら、そちらを強くします。
+    // ここで新しく積むと、1 回の入室のあとの LIKE で円が 2 つになります。
+    // ただし、その弾がもう最大レベルなら足せません。足せないぶんを黙って
+    // 飲み込むと、続けて送ったギフトが無かったことになります。
+    var pending = this.launcher && this.launcher.pendingFor(user.id);
+    if (!circle && pending && pending.level < max) {
+      pending.level = Math.min(pending.level + gained, max);
+      if (this.leaderboard) this.leaderboard.setLevel(user, pending.level, at);
+      return null;
+    }
+
     if (circle && circle.level < max) {
       var before = circle.level;
       this.engine.levelUp(circle, gained, at);
@@ -330,6 +362,10 @@
    * 新しい円を 1 つ作って、その人の「育てている円」にする。
    */
   GameSession.prototype.spawnFor = function (user, spec) {
+    // **円はすべて大砲から出ます。** 一度ここで受け取ってもらい、
+    // 撃つ瞬間に launched を付けて戻ってきます。
+    if (this.launcher && !spec.launched && this.launcher.enqueue(user, spec)) return null;
+
     var circle = this.engine.spawnCircle({
       ownerId: user.id,
       ownerName: user.uniqueId,
@@ -337,8 +373,18 @@
       profileImageUrl: user.profileImageUrl,
       sourceEvent: spec.sourceEvent,
       level: spec.level,
-      demo: Boolean(user.demo)
+      demo: Boolean(user.demo),
+      // 大砲から撃つときだけ付きます (出る場所・向き・飛んでいる時間)
+      x: spec.x,
+      y: spec.y,
+      heading: spec.heading,
+      launchMs: spec.launchMs,
+      launchSpeed: spec.launchSpeed
     }, spec.at);
+
+    // 上限に当たって出せないことがあります (大砲の中で待っている間に、
+    // その人の円が上限まで増えた場合など)。順番待ちへ回します。
+    if (!circle) return this._queueOnly(user, spec);
 
     this._player(user.id).circleId = circle.id;
     this.stats.circles += 1;

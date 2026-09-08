@@ -562,7 +562,11 @@
       x: spec.x != null ? spec.x : stats.radius + this.random() * (this.field.width - stats.radius * 2),
       y: spec.y != null ? spec.y : stats.radius + this.random() * (this.field.height - stats.radius * 2)
     };
-    var heading = this._launchHeading(position);
+    // 大砲から撃つときは向きを指定します (中央へ向かって飛び込ませるため)。
+    // 指定が無ければ今までどおり、中央寄りのランダムな向きです。
+    var heading = spec.heading != null ? spec.heading : this._launchHeading(position);
+    var launchMs = spec.launchMs > 0 ? spec.launchMs : 0;
+    var launchSpeed = launchMs > 0 ? (spec.launchSpeed || 1) : 1;
 
     var circle = {
       id: this._id('circle'),
@@ -583,7 +587,17 @@
       baseSpeed: stats.speed,
       attackIntervalMs: stats.attackIntervalMs,
       position: position,
-      velocity: { x: Math.cos(heading) * stats.speed, y: Math.sin(heading) * stats.speed },
+      velocity: {
+        x: Math.cos(heading) * stats.speed * launchSpeed,
+        y: Math.sin(heading) * stats.speed * launchSpeed
+      },
+      /**
+       * 大砲から飛んでいる間の終わり時刻。null なら通常の円です。
+       *
+       * この間は戦わず、他ともぶつかりません。撃ち出した先に円が詰まっていると、
+       * 出た瞬間に弾かれて「大砲から飛び込んだ」ように見えないためです。
+       */
+      launchUntil: launchMs > 0 ? now + launchMs : null,
       kills: 0,
       damage: 0,
       bornAt: now,
@@ -1065,6 +1079,22 @@
       var circle = this.circles[i];
       if (circle.dead) continue;
 
+      // --- 大砲から飛んでいる間は戦いません。
+      //     撃ち出した先が混んでいると、出た瞬間に殴り合いが始まって
+      //     「飛び込んできた」ように見えないためです。時間が来たら
+      //     速さを元に戻して、普通の円として振る舞い始めます。
+      if (circle.launchUntil != null) {
+        if (now < circle.launchUntil) {
+          circle.position.x += circle.velocity.x * dt;
+          circle.position.y += circle.velocity.y * dt;
+          this._contain(circle);
+          continue;
+        }
+        circle.launchUntil = null;
+        this._restoreSpeed(circle);
+        this.emit('circle:landed', { circle: circle, at: now });
+      }
+
       var nearest = null;
       var nearestDist = Infinity;
 
@@ -1412,6 +1442,8 @@
 
     for (i = 0; i < list.length; i += 1) {
       var entity = list[i];
+      // 大砲から飛んでいる円は当たり判定に入れません (突き抜けて飛び込みます)
+      if (entity.launchUntil != null) continue;
       var cx = Math.floor(entity.position.x / cell);
       var cy = Math.floor(entity.position.y / cell);
       var key = cy * (columns + 2) + cx;
@@ -1431,7 +1463,11 @@
 
     for (i = 0; i < list.length; i += 1) {
       var a = list[i];
+      // 升に入れなかったものは、ここでも飛ばします。入れ忘れたまま
+      // 升を引くと undefined になって落ちます (飛んでいる円がまさにこれ)。
+      if (a.launchUntil != null) continue;
       var own = buckets.get(a._cy * (columns + 2) + a._cx);
+      if (!own) continue;
 
       var j;
       for (j = own.indexOf(a) + 1; j < own.length; j += 1) {

@@ -99,6 +99,10 @@
     this._floats = [];
     /** 攻撃したときの短い線。使い回すので配列は伸び縮みしません。 */
     this._attacks = [];
+    /** 発射の煙と粒。見た目だけの短命なリストです。 */
+    this._sparks = [];
+    /** 円を撃ち出す大砲 (js/cannon.js)。状態を読んで描くだけです。 */
+    this.cannon = options.cannon || null;
 
     /**
      * 武器の見た目。レベルだけを見て描き、ステータスには一切触りません。
@@ -197,12 +201,19 @@
     for (i = 0; i < state.enemies.length; i += 1) {
       this._drawEnemy(ctx, state.enemies[i], scale);
     }
+    // 大砲は盤面の一部。円や敵より先に描いて、上に重ならないようにします。
+    if (this.cannon) this._drawCannon(ctx, scale, now);
+
     // 入室した人の円を目立たせる輪。円より先に描くので、
     // どれだけ光っても顔が隠れることはありません。
     if (this.config.ui.join.highlightMs > 0) {
       for (i = 0; i < state.circles.length; i += 1) {
         this._drawJoinRing(ctx, state.circles[i], scale, now);
       }
+    }
+    // 撃ち出されて飛んでいる円の速度線。円より先に描いて尾に見せます。
+    for (i = 0; i < state.circles.length; i += 1) {
+      this._drawLaunchTrail(ctx, state.circles[i], scale, now);
     }
     // 武器は円より**先に**描きます。あとから円を描けば、どんな武器でも
     // プロフィール画像の上に来ることがありません。
@@ -217,6 +228,7 @@
       this._drawCircle(ctx, state.circles[i], scale, now);
     }
     this._drawAttacks(ctx, scale, now);
+    this._drawSparks(ctx, scale, now);
     if (this.debugHits) this._drawHitboxes(ctx, state.circles, scale);
     // レベルは円を全部描いたあとに描きます。円と一緒に描くと、
     // あとから描かれた円の下に隠れて読めなくなるためです。
@@ -629,6 +641,308 @@
       ctx.restore();
     }
   };
+
+  // ------------------------------------------------------- PLAYER CANNON
+
+  /**
+   * 大砲を描く。
+   *
+   * 状態 (段階・大きさ・装填中の人) は cannon.js が持っていて、ここは
+   * それを読むだけです。だから演出を変えてもゲームのルールには触りません。
+   *
+   * 通常時は小さく出します。**消しはしません。** 「ここから入ってくる」と
+   * 初見でも分かることのほうが、少しの場所を空けるより大事だからです。
+   */
+  Renderer.prototype._drawCannon = function (ctx, scale, now) {
+    var cannon = this.cannon;
+    if (!cannon || !cannon.settings.enabled) return;
+
+    var type = (cannon.shot && cannon.shot.type) ||
+               (cannon.lastShot && cannon.lastShot.type) || cannon.settings.types.normal;
+    var base = cannon.anchor();
+    var aim = cannon.aim();
+    var grow = cannon.scale(now);
+    var length = cannon.settings.size * grow * scale;
+    var x = base.x * scale;
+    var y = base.y * scale;
+
+    // 発射直後だけ、反動で少し後ろへ下がります
+    var since = now - cannon.firedAt;
+    var recoil = since >= 0 && since < 160 ? (1 - since / 160) * length * 0.24 : 0;
+    var bx = x - Math.cos(aim) * recoil;
+    var by = y - Math.sin(aim) * recoil;
+
+    var w = length;
+    var h = length * 0.5;
+    var lit = cannon.phase === 'idle' ? 0.35 : 1;
+
+    ctx.save();
+    ctx.translate(bx, by);
+    ctx.rotate(aim);
+    ctx.lineJoin = 'round';
+
+    // --- 台座。砲身の後ろに置いて、据え付けられている感じを出します
+    ctx.fillStyle = 'rgba(12, 16, 38, 0.94)';
+    ctx.strokeStyle = type.color;
+    ctx.lineWidth = Math.max(2, h * 0.13);
+    ctx.globalAlpha = 0.55 + lit * 0.45;
+    ctx.shadowColor = type.color;
+    ctx.shadowBlur = h * 0.5 * lit;
+    roundRect(ctx, -w * 0.5, -h * 0.62, w * 0.6, h * 1.24, h * 0.3);
+    ctx.fill();
+    ctx.stroke();
+
+    // --- 砲身。先へ向かって少し細くなる台形で、向きが一目で分かります
+    ctx.beginPath();
+    ctx.moveTo(w * 0.02, -h * 0.42);
+    ctx.lineTo(w * 0.98, -h * 0.3);
+    ctx.lineTo(w * 0.98, h * 0.3);
+    ctx.lineTo(w * 0.02, h * 0.42);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(20, 26, 58, 0.96)';
+    ctx.fill();
+    ctx.stroke();
+
+    // 砲身の上を走る光の線。ネオンらしさを出しつつ、向きも強調します
+    ctx.beginPath();
+    ctx.moveTo(w * 0.1, -h * 0.16);
+    ctx.lineTo(w * 0.92, -h * 0.1);
+    ctx.lineWidth = Math.max(1.5, h * 0.08);
+    ctx.globalAlpha = 0.4 + lit * 0.6;
+    ctx.stroke();
+
+    // --- 砲口。装填が進むほど強く光ります
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = type.color;
+    ctx.shadowBlur = h * (0.5 + lit * 1.2);
+    roundRect(ctx, w * 0.94, -h * 0.34, h * 0.26, h * 0.68, h * 0.12);
+    ctx.fill();
+    ctx.restore();
+
+    this._drawCannonLabel(ctx, bx, by, length, aim, type, cannon);
+    this._drawCannonLoad(ctx, scale, now, aim, length);
+    this._drawMuzzleFlash(ctx, scale, now, aim, type);
+  };
+
+  /** 大砲の下に出す小さな名札。 */
+  Renderer.prototype._drawCannonLabel = function (ctx, x, y, length, aim, type, cannon) {
+    var px = Math.max(9, length * 0.19);
+    // 砲身が伸びているのと**反対側**に出します。同じ側だと重なって読めません。
+    var lx = x - Math.cos(aim) * length * 0.55;
+    var ly = y - Math.sin(aim) * length * 0.55 + px * 1.5;
+
+    ctx.save();
+    ctx.font = 'bold ' + px.toFixed(1) + 'px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.globalAlpha = cannon.phase === 'idle' ? 0.7 : 1;
+    ctx.lineWidth = 3.5;
+    ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+    ctx.strokeText(type.label, lx, ly);
+    ctx.fillStyle = type.color;
+    ctx.fillText(type.label, lx, ly);
+    ctx.restore();
+  };
+
+  /**
+   * 装填中の表示。誰が入ってくるのかを、撃つ前に見せます。
+   *
+   * アイコンは既存のキャッシュから借ります。まだ読めていなければ頭文字です。
+   * **読み込みを待ちません。** 待つとその間ゲームが止まって見えます。
+   */
+  Renderer.prototype._drawCannonLoad = function (ctx, scale, now, aim, length) {
+    var cannon = this.cannon;
+    var shot = cannon.shot;
+    if (!shot || cannon.phase !== 'load') return;
+
+    var t = Math.min(1, (now - cannon.phaseAt) / Math.max(1, cannon._loadMs()));
+    var muzzle = cannon.muzzle(cannon.scale(now));
+    var r = length * 0.34;
+    // 砲身の中を進んで砲口へ出ていくように見せます
+    var x = (muzzle.x * scale) - Math.cos(aim) * r * (1 - t) * 1.6;
+    var y = (muzzle.y * scale) - Math.sin(aim) * r * (1 - t) * 1.6;
+
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, t * 3);
+
+    var image = this.avatars ? this.avatars.get(shot.user.profileImageUrl) : null;
+    var hue = ownerHue(String(shot.user.id));
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    if (image) {
+      ctx.drawImage(image, x - r, y - r, r * 2, r * 2);
+    } else {
+      ctx.fillStyle = 'hsl(' + hue + ', 60%, 30%)';
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.92)';
+      ctx.font = 'bold ' + Math.round(r) + 'px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(initial(shot.user.uniqueId), x, y);
+    }
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.lineWidth = Math.max(2, r * 0.16);
+    ctx.strokeStyle = shot.type.color;
+    ctx.stroke();
+
+    // 名前と、入室のときだけ出す短い知らせ
+    var px = Math.max(9, r * 0.62);
+    var notice = cannon.noticeFor(shot.sourceEvent);
+    ctx.textAlign = 'center';
+    ctx.lineWidth = 3.5;
+    ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+
+    var lineY = y - r - px * 0.5;
+    var write = function (text, size, color) {
+      ctx.font = 'bold ' + size.toFixed(1) + 'px system-ui, sans-serif';
+      ctx.textBaseline = 'bottom';
+      ctx.strokeText(text, x, lineY);
+      ctx.fillStyle = color;
+      ctx.fillText(text, x, lineY);
+      lineY -= size * 1.15;
+    };
+
+    write('@' + shot.user.uniqueId, px, '#ffffff');
+    if (notice && notice.main) {
+      write(notice.sub, px * 0.8, '#94a3b8');
+      write(notice.main, px * 1.1, shot.type.color);
+    }
+    ctx.restore();
+  };
+
+  /** 発射の瞬間の閃光・衝撃波・煙。 */
+  Renderer.prototype._drawMuzzleFlash = function (ctx, scale, now, aim, type) {
+    var cannon = this.cannon;
+    var life = 260;
+    var age = now - cannon.firedAt;
+    if (age < 0 || age > life) return;
+
+    var t = age / life;
+    var muzzle = cannon.muzzle(cannon.settings.loadScale);
+    var x = muzzle.x * scale;
+    var y = muzzle.y * scale;
+    var size = cannon.settings.size * scale;
+
+    ctx.save();
+    ctx.globalAlpha = 1 - t;
+
+    // 衝撃波の輪
+    ctx.strokeStyle = type.color;
+    ctx.lineWidth = Math.max(2, size * 0.12 * (1 - t));
+    ctx.beginPath();
+    ctx.arc(x, y, size * (0.2 + t * 1.5) * type.shockwave, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 砲口の炎
+    ctx.translate(x, y);
+    ctx.rotate(aim);
+    ctx.fillStyle = type.color;
+    ctx.globalAlpha = (1 - t) * 0.9;
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 0.3 * (1 - t));
+    ctx.lineTo(size * 0.9 * (1 - t * 0.5), 0);
+    ctx.lineTo(0, size * 0.3 * (1 - t));
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  };
+
+  /**
+   * 発射の煙と粒を撒く。cannon の 'fire' を受けて呼ばれます。
+   * 使い回しの配列で、上限を超えたら古いものから捨てます。
+   */
+  Renderer.prototype.cannonBurst = function (muzzle, aim, type) {
+    var count = Math.min(type.particles || 12, 40);
+    var now = Date.now();
+    for (var i = 0; i < count; i += 1) {
+      var spread = (Math.random() * 2 - 1) * 0.7;
+      var speed = 60 + Math.random() * 260;
+      this._sparks.push({
+        x: muzzle.x,
+        y: muzzle.y,
+        vx: Math.cos(aim + spread) * speed,
+        vy: Math.sin(aim + spread) * speed,
+        life: 260 + Math.random() * 420,
+        size: 2 + Math.random() * 5,
+        smoke: Math.random() < 0.45,
+        color: type.color,
+        at: now
+      });
+    }
+    while (this._sparks.length > 160) this._sparks.shift();
+    return this;
+  };
+
+  Renderer.prototype._drawSparks = function (ctx, scale, now) {
+    for (var i = this._sparks.length - 1; i >= 0; i -= 1) {
+      var p = this._sparks[i];
+      var age = now - p.at;
+      if (age > p.life) { this._sparks.splice(i, 1); continue; }
+
+      var t = age / p.life;
+      var seconds = age / 1000;
+      var x = (p.x + p.vx * seconds) * scale;
+      var y = (p.y + p.vy * seconds) * scale;
+
+      ctx.save();
+      if (p.smoke) {
+        // 煙はふくらみながら薄くなります
+        ctx.globalAlpha = (1 - t) * 0.34;
+        ctx.fillStyle = '#cbd5e1';
+        ctx.beginPath();
+        ctx.arc(x, y, p.size * scale * (1 + t * 3), 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.globalAlpha = 1 - t;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(x, y, p.size * scale * (1 - t * 0.6), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+  };
+
+  /** 撃ち出されて飛んでいる円の尾。 */
+  Renderer.prototype._drawLaunchTrail = function (ctx, circle, scale, now) {
+    if (circle.launchUntil == null || now >= circle.launchUntil) return;
+
+    var speed = Math.sqrt(circle.velocity.x * circle.velocity.x +
+                          circle.velocity.y * circle.velocity.y) || 1;
+    var r = circle.radius * scale;
+    var x = circle.position.x * scale;
+    var y = circle.position.y * scale;
+    var back = Math.min(r * 5, speed * scale * 0.12);
+    var tx = x - (circle.velocity.x / speed) * back;
+    var ty = y - (circle.velocity.y / speed) * back;
+
+    var gradient = ctx.createLinearGradient(x, y, tx, ty);
+    gradient.addColorStop(0, 'rgba(255,255,255,0.55)');
+    gradient.addColorStop(1, 'rgba(255,255,255,0)');
+
+    ctx.save();
+    ctx.strokeStyle = gradient;
+    ctx.lineCap = 'round';
+    ctx.lineWidth = r * 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(tx, ty);
+    ctx.stroke();
+    ctx.restore();
+  };
+
+  /** 角の丸い四角。大砲の各部で使います。 */
+  function roundRect(ctx, x, y, w, h, r) {
+    var radius = Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.arcTo(x + w, y, x + w, y + h, radius);
+    ctx.arcTo(x + w, y + h, x, y + h, radius);
+    ctx.arcTo(x, y + h, x, y, radius);
+    ctx.arcTo(x, y, x + w, y, radius);
+    ctx.closePath();
+  }
 
   /**
    * 入室 (JOIN) で生まれた円か。生まれてから少しの間だけ true。

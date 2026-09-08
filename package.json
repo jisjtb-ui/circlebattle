@@ -5,7 +5,7 @@
   "description": "TikTok LIVE 連動ゲーム CIRCLE BATTLE - 視聴者の円が自動生成される敵を倒す",
   "scripts": {
     "test": "node --test test/*.test.js",
-    "check": "node --check js/config.js && node --check js/game.js && node --check js/game-session.js && node --check js/event-router.js && node --check js/leaderboard.js && node --check js/demo.js && node --check js/director.js && node --check js/avatars.js && node --check js/audio.js && node --check js/weapons.js && node --check js/renderer.js && node --check js/app.js && node --check js/game-view.js && node --check js/controls.js && node --check js/control.js && node --check js/main.js && node --check js/game-main.js"
+    "check": "node --check js/config.js && node --check js/game.js && node --check js/game-session.js && node --check js/event-router.js && node --check js/leaderboard.js && node --check js/demo.js && node --check js/director.js && node --check js/avatars.js && node --check js/audio.js && node --check js/weapons.js && node --check js/cannon.js && node --check js/renderer.js && node --check js/app.js && node --check js/game-view.js && node --check js/controls.js && node --check js/control.js && node --check js/main.js && node --check js/game-main.js"
   },
   "license": "MIT"
 }
