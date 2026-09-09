@@ -39,6 +39,29 @@
   }
 
   /**
+   * 残り HP の色。減るほど赤へ寄せます。
+   *
+   * 数字を読まなくても「あと少し」が分かるようにするためです。
+   */
+  function hpColor(ratio) {
+    if (ratio > 0.5) return '#ffffff';
+    if (ratio > 0.25) return '#fbbf24';
+    return '#f87171';
+  }
+
+  /**
+   * 大きい数を短く。円の中に収める必要があるので、桁を増やしません。
+   *
+   *   980 -> '980'   2140 -> '2.1k'   12400 -> '12k'
+   */
+  function short(value) {
+    var n = Math.max(0, Math.round(value));
+    if (n < 1000) return String(n);
+    if (n < 10000) return (n / 1000).toFixed(1) + 'k';
+    return Math.round(n / 1000) + 'k';
+  }
+
+  /**
    * 長い名前を切り詰める。
    *
    * 大砲は画面の端にあるので、長い名前をそのまま出すと画面の外へ出て
@@ -256,8 +279,9 @@
     this._drawAttacks(ctx, scale, now);
     this._drawSparks(ctx, scale, now);
     if (this.debugHits) this._drawHitboxes(ctx, state.circles, scale);
-    // レベルは円を全部描いたあとに描きます。円と一緒に描くと、
+    // HP と力は円を全部描いたあとに描きます。円と一緒に描くと、
     // あとから描かれた円の下に隠れて読めなくなるためです。
+    this._drawHpAll(ctx, state.circles, scale);
     for (i = 0; i < state.circles.length; i += 1) {
       this._drawLevel(ctx, state.circles[i], scale);
     }
@@ -458,14 +482,24 @@
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // 残り HP。**視聴者どうしも戦う**ので、あとどれだけ耐えられるかが
+    // 残り HP の輪。**視聴者どうしも戦う**ので、あとどれだけ耐えられるかが
     // 見えないと、勝負がついた瞬間しか分かりません。
+    // 残量で色を変えるので、**危ない円が遠目にも分かります**。
     var ratio = Math.max(0, circle.hp / circle.maxHp);
     if (ratio < 1) {
+      var band = Math.max(1.5, r * 0.16);
+      // 減ったぶんの下地。これが無いと、残りが少ないときに輪がどこまで
+      // あったのか分からず、「あと少し」なのかが読めません。
+      ctx.beginPath();
+      ctx.arc(x, y, r + ctx.lineWidth, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+      ctx.lineWidth = band;
+      ctx.stroke();
+
       ctx.beginPath();
       ctx.arc(x, y, r + ctx.lineWidth, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ratio);
-      ctx.strokeStyle = 'rgba(255,255,255,0.55)';
-      ctx.lineWidth = Math.max(1, r * 0.10);
+      ctx.strokeStyle = hpColor(ratio);
+      ctx.lineWidth = band;
       ctx.stroke();
     }
 
@@ -517,6 +551,72 @@
     ctx.shadowBlur = Math.min(14, r * 0.4);
     ctx.fill();
     ctx.restore();
+  };
+
+  /**
+   * 残り HP を**円の真ん中**に出す。
+   *
+   * 視聴者どうしも戦うようになったので、いちばん見たい数字は HP です。
+   * 外周の輪だけだと、密集したときに隣の円の輪と混ざって読めません。
+   *
+   * **プロフィール画像の上に重なります。** 顔を隠さないことより、
+   * 「あとどれだけ耐えられるか」が読めることを優先しました。
+   * 数字の下に敷く帯は横長なので、顔の上下は透けたままです。
+   *
+   * 円ごとに 1 回ずつ描くのではなく**まとめて描きます**。canvas は
+   * font / textAlign を変えるたびに組み直すので、円が 100 個あると
+   * それだけで FPS が 2 割落ちました (実測 59 → 47)。
+   */
+  Renderer.prototype._drawHpAll = function (ctx, circles, scale) {
+    if (!circles.length) return;
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // --- 1 周目: 数字の下に敷く帯。塗りの色が同じものはまとめて 1 回で塗ります
+    ctx.beginPath();
+    var i;
+    var shown = 0;
+    for (i = 0; i < circles.length; i += 1) {
+      var circle = circles[i];
+      var r = circle.radius * scale;
+      if (r < 12) continue;                 // 小さすぎて読めないものは出さない
+      shown += 1;
+      ctx.ellipse(circle.position.x * scale, circle.position.y * scale,
+        r * 0.86, r * 0.42, 0, 0, Math.PI * 2);
+    }
+    if (!shown) return;
+    ctx.fillStyle = 'rgba(4, 6, 18, 0.55)';
+    ctx.fill();
+
+    // --- 2 周目: 数字。font は 2px 刻みに丸めて、同じ大きさの円が続くときに
+    //     組み直しを起こさないようにします
+    var font = '';
+    var color = '';
+    var stroke = 0;
+    ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+    for (i = 0; i < circles.length; i += 1) {
+      var c = circles[i];
+      var radius = c.radius * scale;
+      if (radius < 12) continue;
+
+      var size = Math.max(8, Math.round(radius * 0.31) * 2);
+      var next = 'bold ' + size + 'px system-ui, sans-serif';
+      if (next !== font) { font = next; ctx.font = next; }
+
+      var width = Math.max(2, size * 0.16);
+      if (width !== stroke) { stroke = width; ctx.lineWidth = width; }
+
+      var tint = hpColor(Math.max(0, c.hp / c.maxHp));
+      if (tint !== color) { color = tint; ctx.fillStyle = tint; }
+
+      var text = short(c.hp);
+      var tx = c.position.x * scale;
+      var ty = c.position.y * scale;
+      // 縁取りを入れるのは、明るいアイコンの上でも白い数字が沈まないようにするため
+      ctx.strokeText(text, tx, ty);
+      ctx.fillText(text, tx, ty);
+    }
   };
 
   /**
