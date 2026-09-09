@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CIRCLE BATTLE - VIDEO BATTLE MODE</title>
+<link rel="stylesheet" href="css/video.css">
+</head>
+<body data-panel="on">
+
+<!-- ============================================================
+     VIDEO BATTLE MODE。動画を作るための 1 対 1 の画面です。
+
+     LIVE 版 (index.html / game.html) とは完全に別で、あちらの
+     ファイルは 1 つも読み込みません。ルールも音も設定も別に持ちます。
+
+       盤面 (canvas) … 9:16。HP バーも WINNER も**この中に**描きます
+       操作パネル    … 音量 / BGM / 録画。canvas の外なので動画には写りません
+
+     録画は canvas をそのまま撮るので、パネルは映り込みません
+     ([ HIDE UI ] か H キーで消すこともできます)。
+     ============================================================ -->
+
+<div class="stage">
+  <div class="screen">
+    <canvas id="field" width="1080" height="1920"></canvas>
+
+    <!-- ネオンの外枠。4 本の帯なので、光らせても描画は重くなりません -->
+    <div class="neon" aria-hidden="true">
+      <i class="neon__top"></i><i class="neon__bottom"></i>
+      <i class="neon__left"></i><i class="neon__right"></i>
+    </div>
+
+    <span class="muted" id="muted" hidden>🔇 クリックで音が出ます</span>
+  </div>
+</div>
+
+<aside class="panel" id="panel">
+  <h1 class="panel__title">VIDEO BATTLE <span>MODE</span></h1>
+
+  <section class="card">
+    <h2 class="card__title">BATTLE</h2>
+    <div class="row">
+      <button type="button" class="big" id="btn-start">[ REMATCH ]</button>
+      <label class="check"><input id="auto-rematch" type="checkbox" checked> AUTO REMATCH</label>
+    </div>
+    <p class="card__note" id="result"></p>
+    <p class="card__note">R キーで再戦 / H キーでパネルの表示切り替え</p>
+  </section>
+
+  <section class="card">
+    <h2 class="card__title">AUDIO</h2>
+    <div class="row">
+      <button type="button" id="btn-sound" data-off="false">SOUND ON</button>
+    </div>
+    <div class="row">
+      <label>MASTER <input id="master-volume" type="range" min="0" max="100" step="5"></label>
+      <output id="master-out">85%</output>
+    </div>
+    <div class="row">
+      <label>SFX <input id="sfx-volume" type="range" min="0" max="100" step="5"></label>
+      <output id="sfx-out">90%</output>
+    </div>
+    <div class="row">
+      <label>MUSIC <input id="music-volume" type="range" min="0" max="100" step="5"></label>
+      <output id="music-out">40%</output>
+    </div>
+    <p class="card__note" id="sound-source">音源: クリックで読み込みます</p>
+    <p class="card__note">
+      sounds/ に同じ名前の wav を置くと、その音に差し替わります
+      (無い音はその場で合成します)。
+    </p>
+  </section>
+
+  <section class="card">
+    <h2 class="card__title">BGM</h2>
+    <div class="row">
+      <label class="file">FILE <input id="bgm-file" type="file" accept="audio/*"></label>
+      <button type="button" id="btn-bgm">PLAY</button>
+    </div>
+    <p class="card__note" id="bgm-name">ファイル未選択</p>
+    <p class="card__note">大きい音が鳴った瞬間だけ BGM が下がるので、効果音は埋もれません。</p>
+  </section>
+
+  <section class="card">
+    <h2 class="card__title">RECORD</h2>
+    <p class="card__note">
+      画面と<b>ゲーム音</b>をまとめて webm に書き出します。
+      効果音・ヒット音・勝利音まで入った状態で保存されます。
+    </p>
+    <div class="row">
+      <button type="button" class="big" id="btn-record">REC</button>
+      <button type="button" id="btn-panel">HIDE UI</button>
+    </div>
+    <p class="card__note" id="record-state">停止中</p>
+  </section>
+</aside>
+
+<script src="js/video-config.js"></script>
+<script src="js/video-sound-bank.js"></script>
+<script src="js/video-audio.js"></script>
+<script src="js/video-battle.js"></script>
+<script src="js/video-sound-director.js"></script>
+<script src="js/video-renderer.js"></script>
+<script src="js/video-recorder.js"></script>
+<script src="js/video-main.js"></script>
+</body>
+</html>

@@ -1,0 +1,225 @@
+/*
+ * video.css - VIDEO BATTLE MODE の画面。
+ *
+ * LIVE 版の css/game.css には触りません。あちらは「画面いっぱいがスタジアム」
+ * ですが、こちらは**録画する 9:16 の枠**と、その外に置く操作パネルの 2 つに
+ * 分かれます。枠の中は canvas だけで、HTML の表示は一切重ねません
+ * (canvas.captureStream() で撮るので、重ねたものは動画に写らないためです)。
+ */
+
+:root {
+  --bg: #04050e;
+  --text: #eef1ff;
+  --muted: #97a1c8;
+  --panel: rgba(9, 12, 30, 0.92);
+  --line: rgba(120, 140, 255, 0.24);
+
+  --neon-1: #ff2f6d;
+  --neon-2: #7c5cff;
+  --neon-3: #22d3ee;
+  --neon-width: clamp(3px, 0.5vw, 8px);
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, -apple-system, 'Hiragino Kaku Gothic ProN', sans-serif;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body {
+  display: flex;
+  align-items: stretch;
+  gap: clamp(8px, 1.4vw, 22px);
+  padding: clamp(8px, 1.2vw, 20px);
+}
+
+/* ------------------------------------------------------------ 盤面 */
+
+.stage {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+
+/*
+ * 9:16 の枠。高さいっぱいに広げて、幅はそこから決めます。
+ * aspect-ratio に任せるので、どの画面でも比が崩れません。
+ */
+.screen {
+  position: relative;
+  height: 100%;
+  aspect-ratio: 9 / 16;
+  max-width: 100%;
+  border-radius: clamp(10px, 1vw, 20px);
+  overflow: hidden;
+  box-shadow: 0 0 clamp(30px, 4vw, 80px) rgba(124, 92, 255, 0.35);
+}
+
+#field {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+}
+
+/*
+ * ネオンの外枠。画面いっぱいの 1 枚をくり抜くと、光らせるたびに全画素を
+ * 塗り直すことになります。4 本の帯なら塗るのはごく一部で済みます。
+ */
+.neon { position: absolute; inset: 0; pointer-events: none; }
+.neon i {
+  position: absolute;
+  background: linear-gradient(90deg, var(--neon-1), var(--neon-2), var(--neon-3), var(--neon-1));
+  background-size: 300% 100%;
+  animation: flow 7s linear infinite;
+  opacity: 0.85;
+}
+.neon__top, .neon__bottom { left: 0; right: 0; height: var(--neon-width); }
+.neon__top { top: 0; }
+.neon__bottom { bottom: 0; }
+.neon__left, .neon__right { top: 0; bottom: 0; width: var(--neon-width); }
+.neon__left { left: 0; }
+.neon__right { right: 0; }
+
+@keyframes flow {
+  from { background-position: 0 0; }
+  to { background-position: 300% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .neon i { animation: none; }
+}
+
+.muted {
+  position: absolute;
+  left: 50%;
+  bottom: 3%;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: rgba(4, 5, 14, 0.85);
+  border: 1px solid var(--line);
+  font-size: 14px;
+}
+
+/* -------------------------------------------------------- パネル */
+
+.panel {
+  flex: 0 0 clamp(280px, 26vw, 380px);
+  overflow-y: auto;
+  padding: clamp(10px, 1vw, 18px);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+/* [ HIDE UI ] / H キーで隠します。録画には元から写りません */
+body[data-panel="off"] .panel { display: none; }
+
+.panel__title {
+  margin: 0 0 12px;
+  font-size: 18px;
+  letter-spacing: 0.14em;
+}
+.panel__title span { color: var(--neon-3); }
+
+.card {
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(6, 8, 22, 0.6);
+}
+
+.card__title {
+  margin: 0 0 10px;
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  color: var(--muted);
+}
+
+.card__note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.row + .row { margin-top: 8px; }
+
+button {
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(124, 92, 255, 0.16);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+button:hover { background: rgba(124, 92, 255, 0.3); }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.big { flex: 1 1 auto; font-weight: 700; }
+
+/* 録音中と消音中は、ひと目で分かるようにします */
+button[data-live="true"] {
+  background: rgba(255, 47, 109, 0.35);
+  border-color: var(--neon-1);
+  animation: blink 1.4s ease-in-out infinite;
+}
+button[data-off="true"] { background: rgba(255, 255, 255, 0.06); color: var(--muted); }
+
+@keyframes blink {
+  50% { background: rgba(255, 47, 109, 0.12); }
+}
+
+label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+input[type="range"] { width: clamp(90px, 12vw, 160px); accent-color: var(--neon-3); }
+input[type="file"] { width: 140px; font-size: 11px; color: var(--muted); }
+.check { color: var(--text); }
+
+output {
+  min-width: 42px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+#result {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--text);
+}
+
+/* 縦長の画面ではパネルを下に回します */
+@media (max-aspect-ratio: 1/1) {
+  body { flex-direction: column; }
+  .stage { min-height: 0; }
+  .panel { flex: 0 0 auto; max-height: 42vh; }
+}
