@@ -87,7 +87,8 @@
       bossBarLabel: $('boss-bar-label'),
       bossBarFill: $('boss-bar-fill'),
       bossBarValue: $('boss-bar-value'),
-      wave: $('wave'),
+      roundTime: $('round-time'),
+      roundBox: $('round-box'),
       notice: $('notice'),
       stageBanner: $('stage-banner'),
       stageBannerMain: $('stage-banner-main'),
@@ -120,6 +121,10 @@
     this.cannon = options.cannon || null;
     /** 入室した人の名前を中央に出す係 (js/join-banner.js)。同じく読むだけです。 */
     this.joinBanner = options.joinBanner || null;
+    /** ラウンドの残り時間を持っている進行役 (js/director.js)。読むだけです。 */
+    this.director = options.director || null;
+    /** 今 DOM に出している残り秒。変わったときだけ書き換えます。 */
+    this._roundLeft = -1;
     /** 今 DOM に出している名前の通し番号。変わったときだけ出し直します。 */
     this._joinSerial = -1;
     /** 中央バナーと重ならないように下へ逃がしているか。 */
@@ -270,6 +275,7 @@
     this._drawBursts(ctx, scale, now);
     this._drawFloats(ctx, scale, now);
     this._syncJoinBanner(now);
+    this._syncRoundTime(now);
     this._drawHud(state);
     this.renderRanking();
     this._expireEvents(now);
@@ -1262,9 +1268,41 @@
     }
   };
 
-  /** 今のウェーブ。director が進めます。 */
-  Renderer.prototype.setWave = function (wave) {
-    if (this.el.wave) this.el.wave.textContent = wave;
+  /**
+   * ラウンドの残り時間。
+   *
+   * ウェーブの通し番号をやめて、ここを残り時間にしました。数が積み上がると
+   * あとから来た人には「もう遅い」に見えますが、残り時間なら**いつ来ても
+   * 意味が同じ**で、しかも減っていくぶん急かされます。
+   *
+   * 秒が変わったときだけ書き換えます。毎フレーム書くと、この 1 行のために
+   * レイアウトが毎回組み直されます。
+   */
+  Renderer.prototype._syncRoundTime = function (now) {
+    var el = this.el.roundTime;
+    if (!el || !this.director) return;
+
+    var left = this.director.remainingMs(now);
+    // 終わりを決めていないとき (roundMs: 0) は行ごと出しません
+    if (!isFinite(left)) {
+      if (this.el.roundBox && !this.el.roundBox.hidden) this.el.roundBox.hidden = true;
+      return;
+    }
+    if (this.el.roundBox && this.el.roundBox.hidden) this.el.roundBox.hidden = false;
+
+    var seconds = Math.ceil(left / 1000);
+    if (seconds === this._roundLeft) return;
+    this._roundLeft = seconds;
+
+    var mm = Math.floor(seconds / 60);
+    var ss = seconds % 60;
+    el.textContent = mm + ':' + (ss < 10 ? '0' : '') + ss;
+
+    // 残り 10 秒からは色を変えます (終わりが来ることが見えるように)
+    if (this.el.roundBox) {
+      if (seconds <= 10) this.el.roundBox.classList.add('status__round--soon');
+      else this.el.roundBox.classList.remove('status__round--soon');
+    }
   };
 
   /**
@@ -1502,7 +1540,7 @@
       el.classList.add('join-banner--in');
     }
 
-    // WAVE などの中央バナーが出ている間だけ下へ逃がします。真ん中で重ねると
+    // 中央バナー (ラウンド結果など) が出ている間だけ下へ逃がします。重ねると
     // どちらも読めなくなり、「目立つ」どころではなくなります。
     var busy = Boolean(this.el.stageBanner && !this.el.stageBanner.hidden);
     if (busy !== this._joinLow) {

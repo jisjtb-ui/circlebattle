@@ -55,6 +55,7 @@
       avatars: app.avatars,
       cannon: app.cannon,
       joinBanner: app.joinBanner,
+      director: app.director,
       doc: doc,
       win: win,
       primary: Boolean(options.primary)
@@ -324,22 +325,36 @@
       console.log('[COMMENT] @' + comment.user.uniqueId + ': ' + comment.text);
     });
 
-    // ------------------------------------------------ ウェーブと特殊イベント
+    // ------------------------------------------------ ラウンドと特殊イベント
     if (app.director) {
-      renderer.setWave(app.director.wave);
-
-      listen(app.director, 'wave', function (wave) {
-        renderer.setWave(wave.wave);
-        // 特殊イベントが起きる回は、そちらの文字を優先します (2 枚重ねない)
-        if (!wave.event) {
-          renderer.showStageBanner('WAVE ' + wave.wave, 'THE ENEMY KEEPS COMING', 1800);
-          play('rank');
-        }
-      });
-
       listen(app.director, 'event', function (event) {
         renderer.showStageBanner(event.label, event.sub || '', 2200);
         renderer.pushEvent('SYSTEM', event.label, 'system');
+        play('rank');
+      });
+
+      /**
+       * ラウンドの終わり。
+       *
+       * **勝った人の名前を出します。** 数字だけ消えて次が始まると、
+       * 見ていた時間が何だったのか分かりません。誰が 1 位で終わったかを
+       * 出してから消します。
+       */
+      listen(app.director, 'round:end', function () {
+        var top = app.leaderboard ? app.leaderboard.top(1) : [];
+        var winner = top.length ? top[0] : null;
+        renderer.showStageBanner(
+          winner ? 'WINNER  @' + winner.userName : 'TIME UP',
+          winner ? Math.round(winner.score).toLocaleString() + ' PTS  \u2013  NEXT ROUND STARTS SOON'
+                 : 'NEXT ROUND STARTS SOON',
+          config.director.resultMs || 6000);
+        renderer.pushEvent(winner ? winner.userName : 'SYSTEM', 'ROUND OVER', 'system');
+        play('rank');
+      });
+
+      // 消したのは app.js。ここは「また最初から」と出すだけです。
+      listen(app.director, 'round:reset', function () {
+        renderer.showStageBanner('NEW ROUND', 'EVERYONE STARTS FROM ZERO', 2000);
         play('rank');
       });
     }

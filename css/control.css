@@ -297,6 +297,9 @@ button:hover { background: #262c5c; }
   font-weight: 900;
   letter-spacing: 0.12em;
   color: var(--accent);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -304,6 +307,9 @@ button:hover { background: #262c5c; }
   font-size: 10px;
   letter-spacing: 0.2em;
   color: var(--muted);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

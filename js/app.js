@@ -190,6 +190,24 @@
       if (app.joinBanner) app.joinBanner.reset();
     };
 
+    /**
+     * ラウンドの時間が来たら全部消して次を始める。
+     *
+     * **消すのはここだけ**です。director は時間を数えて知らせるだけで、
+     * 何を消すかは知りません (組み立てた側だけが全部を知っています)。
+     * director 自身の時計は director が引き直すので、ここでは reset を
+     * 呼び直しません。呼ぶと 1 ラウンド目に戻ってしまいます。
+     */
+    if (director) {
+      director.on('round:reset', function () {
+        app.engine.reset();
+        app.leaderboard.reset();
+        app.session.reset();
+        if (app.cannon) app.cannon.reset();
+        if (app.joinBanner) app.joinBanner.reset();
+      });
+    }
+
     return app;
   }
 

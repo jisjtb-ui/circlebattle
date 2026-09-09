@@ -11,7 +11,7 @@
 <!-- ============================================================
      配信に映す画面だけ。設定も接続もここには置きません。
 
-       上   : STATUS (WAVE / DEFEATED / 数)
+       上   : STATUS (残り時間 / DEFEATED / 数)
        中央 : 正方形のバトルフィールド (この画面の主役)
        下   : TOP 10 PLAYER + LIVE EVENT (数行)
 
@@ -48,7 +48,7 @@
 
     <header class="status">
       <div class="status__row">
-        <span class="status__wave">WAVE <b id="wave">1</b></span>
+        <span class="status__round" id="round-box">TIME <b id="round-time">10:00</b></span>
         <span class="status__conn" id="status" data-state="offline"><i></i><span id="status-text">…</span></span>
         <span class="status__muted" id="muted" hidden>🔇 TAP FOR SOUND</span>
       </div>

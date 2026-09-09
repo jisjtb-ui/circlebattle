@@ -25,7 +25,8 @@
       { path: 'enemies.spawn.maxAlive', label: 'MAX ALIVE', min: 8, max: 120, step: 2 },
       { path: 'enemies.spawn.minAlive', label: 'MIN ALIVE', min: 0, max: 40, step: 1 },
       { path: 'enemies.scale.hpPerTotalLevel', label: 'HP SCALING', min: 200, max: 4000, step: 100 },
-      { path: 'director.waveMs', label: 'WAVE EVERY', min: 20000, max: 300000, step: 10000, unit: 'ms' },
+      { path: 'director.roundMs', label: 'ROUND TIME', min: 60000, max: 1800000, step: 60000, unit: 'ms' },
+      { path: 'director.eventEveryMs', label: 'EVENT EVERY', min: 20000, max: 300000, step: 10000, unit: 'ms' },
       { path: 'director.eventChance', label: 'EVENT CHANCE', min: 0, max: 1, step: 0.05 }
     ],
     viewers: [
