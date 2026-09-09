@@ -173,7 +173,7 @@
     // 最終形態の衝撃波。射程内の敵を巻き込んだときだけ出ます
     listen(engine, 'weapon:nova', function (burst) {
       var circle = burst.circle;
-      var tier = renderer.weapons ? renderer.weapons.tierFor(circle.level) : null;
+      var tier = renderer.weapons ? renderer.weapons.tierFor(circle.attack) : null;
       renderer.flash(circle.position.x, circle.position.y,
         circle.radius * (tier && tier.hit ? tier.hit.reach : 1.7),
         (tier && tier.color) || '#facc15');
@@ -192,9 +192,18 @@
       }
     });
 
+    // 倒された。**誰に倒されたか**が分かるようにします。視聴者どうしも
+    // 戦うので、「なぜ消えたのか」が見えないと理不尽に映ります。
     listen(engine, 'circle:removed', function (removed) {
-      if (removed.reason === 'defeated') play('lose');
-      if (removed.reason === 'burnout') play('kill', { pitch: 0.7 });
+      if (removed.reason !== 'defeated') return;
+      play('lose');
+
+      var circle = removed.circle;
+      if (removed.by) {
+        renderer.float('KO', circle.position.x, above(circle),
+          { color: '#f87171', size: 34 });
+        renderer.pushEvent(removed.by.ownerName, 'KO  @' + circle.ownerName, 'max');
+      }
     });
 
     listen(engine, 'stage:change', function (change) {
@@ -217,20 +226,6 @@
         { color: taken.item.color, size: 30 });
     });
 
-    // Lv100 は最終到達点。ここだけ他と明確に違う出し方にします
-    listen(engine, 'circle:maxed', function (event) {
-      var circle = event.circle;
-      var tier = renderer.weapons ? renderer.weapons.tierFor(circle.level) : null;
-      var color = tier ? tier.color : '#fde047';
-
-      play('rank');
-      renderer.float('LEGENDARY', circle.position.x, above(circle),
-        { color: color, size: 46 });
-      renderer.flash(circle.position.x, circle.position.y, circle.radius * 1.6, color);
-      renderer.showStageBanner('LEVEL 100', 'LEGENDARY CORE  \u2013  NOVA', 2200);
-      renderer.pushEvent(circle.ownerName, 'LEGENDARY CORE  NOVA', 'max');
-    });
-
     // 生まれた。**自分の円が出たことが分かる**のが、次の LIKE を押す理由になります。
     listen(session, 'spawn', function (spawn) {
       // 音は大砲が撃つときに鳴らします (大砲を使わない構成のときだけここで)
@@ -240,7 +235,7 @@
       // 円のほうにも光る輪が出るので (renderer)、どれが自分か分かります。
       var joined = spawn.sourceEvent === 'JOIN';
       renderer.pushEvent(spawn.user.uniqueId,
-        joined ? 'JOINED → Lv' + spawn.level : spawn.sourceEvent + ' → Lv' + spawn.level,
+        joined ? 'JOINED' : spawn.sourceEvent + '  LAUNCHED',
         joined ? 'join' : 'spawn');
 
       // 大砲があるときは、装填中に「NEW PLAYER / @名前」を出しているので
@@ -254,14 +249,34 @@
       }
     });
 
-    // レベルアップは 10 LIKE ごとに起きるので、行としては出しません
-    // (出すと LIVE EVENT が LIKE で埋まって、他が読めなくなります)。
-    listen(session, 'levelup', function (up) {
+    /**
+     * 力が増えた。
+     *
+     * **何が増えたのかを出します。** 1 本の物差しではなくなったので、
+     * 「+HP」なのか「+ATK」なのかが分からないと、押した行動と画面が
+     * つながりません。行としては出しません (LIKE で埋まってしまいます)。
+     */
+    var GROWTH = {
+      hp:     { text: '+HP',    color: '#4ade80' },
+      attack: { text: '+ATK',   color: '#fb923c' },
+      drain:  { text: '+DRAIN', color: '#34d399' },
+      spike:  { text: '+SPIKE', color: '#e2e8f0' }
+    };
+
+    listen(session, 'grew', function (up) {
       play(SPAWN_SFX[up.sourceEvent] || 'spawn');
-      // レベルの数字はその場に小さく飛ばすだけ。円のバッジも同時に変わります。
-      renderer.float('Lv' + up.to, up.circle.position.x, above(up.circle),
-        { color: '#7dd3fc', size: 26 });
-      showWeaponUpgrade(up.circle, up.from, up.to);
+
+      var beforeAttack = up.circle.attack - up.gained.attack * config.viewers.stats.attack.per;
+      var keys = Object.keys(GROWTH);
+      var line = 0;
+      for (var i = 0; i < keys.length; i += 1) {
+        if (!up.gained[keys[i]]) continue;
+        var shown = GROWTH[keys[i]];
+        renderer.float(shown.text, up.circle.position.x,
+          above(up.circle) - line * 26, { color: shown.color, size: 26 });
+        line += 1;
+      }
+      showWeaponUpgrade(up.circle, beforeAttack, up.circle.attack);
     });
 
     /**
@@ -269,7 +284,7 @@
      *
      * **ゲームは止めません。** 止めると、その間 TikTok の画面では何も
      * 起きていないように見えます。出すのは円のところに飛ぶ文字と閃光だけで、
-     * 節目 (Lv50 / Lv100) のときだけ中央に短いバナーを足します。
+     * 節目 (config.weapons.milestones) のときだけ中央に短いバナーを足します。
      */
     function showWeaponUpgrade(circle, from, to) {
       var weapons = renderer.weapons;
@@ -277,8 +292,6 @@
 
       var tier = weapons.tierChanged(from, to);
       if (!tier) return;
-      // Lv100 は 'circle:maxed' が受け持ちます (ここでも出すと 2 重になります)
-      if (tier.minLevel >= config.viewers.levels.max) return;
 
       renderer.float(tier.name, circle.position.x, above(circle),
         { color: tier.color, size: 38 });
@@ -292,10 +305,8 @@
       }
 
       // 節目だけ中央にも出します。毎段出すと 10 回ぶん画面をふさぎます
-      if (config.weapons.milestones.indexOf(tier.minLevel) === -1) return;
-      renderer.showStageBanner('LEVEL ' + tier.minLevel,
-        tier.name + (ability ? '  \u2013  ' + ability.name : ''),
-        tier.minLevel >= 100 ? 2200 : 1600);
+      if (config.weapons.milestones.indexOf(tier.id) === -1) return;
+      renderer.showStageBanner(tier.name, ability ? ability.name : 'NEW WEAPON', 1800);
     }
 
     // 順番待ちに入った。押した操作が捨てられていないことを見せます。
@@ -432,7 +443,7 @@
       var gap = target ? Math.max(0, Math.round(target.score - recent.score)) : 0;
       var hint = gap > 0
         ? gap.toLocaleString() + ' TO TOP10'
-        : app.session.likesToNextLevel(recent.userId) + ' LIKES TO Lv' + (recent.level + 1);
+        : app.session.likesToNextPoint(recent.userId) + ' LIKES TO +HP';
 
       renderer.setSelfRank('@' + recent.userName + ' #' + rank + '  –  ' + hint);
     }

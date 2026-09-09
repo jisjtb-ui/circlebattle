@@ -29,15 +29,15 @@
    * 段の引き当ては js/game.js が持っています。ここはそれを借りるだけです。
    * 借りられない場合 (単体で読み込んだとき) だけ同じ計算をします。
    */
-  function tierForLevel(level, weapons) {
+  function tierForAttack(attack, weapons) {
     var rules = (global.CB && global.CB.weaponTierFor) ||
       (typeof require === 'function' ? require('./game.js').weaponTierFor : null);
-    if (rules) return rules(level, weapons);
+    if (rules) return rules(attack, weapons);
 
     var tiers = weapons.tiers;
     var found = tiers[0];
     for (var i = 0; i < tiers.length; i += 1) {
-      if (level >= tiers[i].minLevel) found = tiers[i]; else break;
+      if (attack >= tiers[i].minAttack) found = tiers[i]; else break;
     }
     return found;
   }
@@ -277,63 +277,64 @@
     /** 段ごとの絵。key = id:layer:color */
     this._sprites = {};
     /** レベル -> 段。100 個しかないので全部持っておきます。 */
-    this._byLevel = {};
+    this._byAttack = {};
   }
 
   /**
-   * そのレベルの段。
+   * その攻撃力の段。
    *
    * 段の引き当ては**ルール側 (js/game.js) の関数をそのまま使います**。
    * 武器は当たり判定と特殊能力を持つので、見た目とルールで別々に計算すると、
    * 見えている武器と当たる武器がずれます。
    */
-  Weapons.prototype.tierFor = function (level) {
-    var cached = this._byLevel[level];
+  Weapons.prototype.tierFor = function (attack) {
+    var key = Math.round(attack);
+    var cached = this._byAttack[key];
     if (cached) return cached;
-    this._byLevel[level] = tierForLevel(level, this.settings);
-    return this._byLevel[level];
+    this._byAttack[key] = tierForAttack(key, this.settings);
+    return this._byAttack[key];
   };
 
   /**
    * 段の中でどこまで来たか (0〜1)。
    *
-   * 中間レベルの成長はこれ 1 つで表します。Lv11〜14 で光が強くなり、
-   * Lv15 で軌跡が出て、Lv16〜19 で軌跡が伸びる、という具合です。
-   * レベルごとに絵を持たなくて済むので、段が増えても重くなりません。
+   * 段の途中の成長はこれ 1 つで表します。段に入ってすぐは光が弱く、
+   * 半ばで軌跡が出て、次の段の手前で軌跡が伸びる、という具合です。
+   * 攻撃力ごとに絵を持たなくて済むので、段が増えても重くなりません。
    */
-  Weapons.prototype.progressFor = function (level) {
-    var tier = this.tierFor(level);
+  Weapons.prototype.progressFor = function (attack) {
+    var tier = this.tierFor(attack);
     var tiers = this.settings.tiers;
     var index = tiers.indexOf(tier);
     var next = tiers[index + 1];
     if (!next) return 1;
-    var span = next.minLevel - tier.minLevel;
-    return span > 0 ? Math.min(1, (level - tier.minLevel) / span) : 1;
+    var span = next.minAttack - tier.minAttack;
+    return span > 0 ? Math.min(1, (attack - tier.minAttack) / span) : 1;
   };
 
   /**
-   * そのレベルの武器の大きさ (円の半径に対する倍率)。
+   * その攻撃力の武器の大きさ (円の半径に対する倍率)。
    *
-   * レベルに対してまっすぐ増えます。段ごとの階段にしないのは、
-   * 段の終わり (Lv19) の武器が次の段の頭 (Lv20) より大きく見えてしまうと、
-   * 「育つほど強そう」が崩れるためです。
+   * 攻撃力に対してまっすぐ増えます。段ごとの階段にしないのは、
+   * 段の終わりの武器が次の段の頭より大きく見えてしまうと、
+   * 「強いほど強そう」が崩れるためです。
    */
-  Weapons.prototype.scaleFor = function (level) {
-    var max = this.config.viewers.levels.max;
-    var lv = Math.max(1, Math.min(max, level));
+  Weapons.prototype.scaleFor = function (attack) {
+    var max = this.config.viewers.base.attack + this.config.viewers.stats.attack.max;
+    var value = Math.max(0, Math.min(max, attack));
     var min = this.settings.minScale;
-    return min + ((lv - 1) / (max - 1)) * (this.settings.maxScale - min);
+    return min + (value / max) * (this.settings.maxScale - min);
   };
 
-  /** 次の段まであと何レベルか (0 なら最終段)。 */
-  Weapons.prototype.levelsToNextTier = function (level) {
+  /** 次の段まであと何ぶんの攻撃力か (0 なら最終段)。 */
+  Weapons.prototype.attackToNextTier = function (attack) {
     var tiers = this.settings.tiers;
-    var index = tiers.indexOf(this.tierFor(level));
+    var index = tiers.indexOf(this.tierFor(attack));
     var next = tiers[index + 1];
-    return next ? next.minLevel - level : 0;
+    return next ? next.minAttack - attack : 0;
   };
 
-  /** 段が変わったか (レベルアップの演出を出す判断に使う)。 */
+  /** 段が変わったか (成長の演出を出す判断に使う)。 */
   Weapons.prototype.tierChanged = function (from, to) {
     if (to <= from) return null;
     var before = this.tierFor(from);
@@ -473,16 +474,16 @@
     var settings = this.settings;
     if (!settings.enabled || r < settings.minRadiusPx) return;
 
-    var tier = this.tierFor(circle.level);
+    var tier = this.tierFor(circle.attack);
     var painters = PAINTERS[tier.id] || {};
     if (!painters.a && !painters.b) return;                 // Lv1〜9 は武器なし
 
     var color = circle.demo ? settings.npcColor : tier.color;
-    var progress = this.progressFor(circle.level);
+    var progress = this.progressFor(circle.attack);
 
     // 段の中での成長。濃さはこの段の進み具合、大きさはレベルそのもので決めます
     var alpha = 0.82 + progress * 0.18;
-    var grow = this.scaleFor(circle.level);
+    var grow = this.scaleFor(circle.attack);
     // NPC は同じレベルの本物より必ず控えめに見えるようにします
     if (circle.demo) alpha *= settings.npcAlpha;
 

@@ -77,7 +77,7 @@
     var event;
 
     if (roll < 0.6) {
-      event = { type: 'LIKE', user: user, count: this.config.viewers.levels.likesPerLevel, at: now };
+      event = { type: 'LIKE', user: user, count: this.config.viewers.gain.likesPerPoint, at: now };
     } else if (roll < 0.85) {
       event = { type: 'FOLLOW', user: user, at: now };
     } else {

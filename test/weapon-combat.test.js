@@ -7,7 +7,7 @@
  */
 const test = require('node:test');
 const assert = require('node:assert');
-const { setup, makeConfig } = require('./helpers.js');
+const { setup, makeConfig, attackPoints } = require('./helpers.js');
 const { weaponTierFor } = require('../js/game.js');
 
 /** 敵を 1 体だけ、円から見て角度 angle・距離 distance のところに置く。 */
@@ -27,7 +27,7 @@ function place(s, circle, angle, distance, typeId = 'boss') {
  *   - 武器は回らない (spin 0)。角度を固定して当たり方だけを見る
  *   - 円は動かない
  */
-function arena(level, tweak = {}) {
+function arena(attack, tweak = {}) {
   const config = {
     demo: { enabled: false },
     enemies: { spawn: { intervalMs: 999_999, initialCount: 0, minAlive: 0, maxAlive: 99 } },
@@ -36,7 +36,11 @@ function arena(level, tweak = {}) {
   };
   const s = setup({ config });
 
-  const circle = s.engine.spawnCircle({ ownerId: 'u1', ownerName: 'yui', level, x: 500, y: 500 });
+  const circle = s.engine.spawnCircle({
+    ownerId: 'u1', ownerName: 'yui',
+    points: { attack: attackPoints(s.config, attack) },
+    x: 500, y: 500
+  });
   circle.velocity.x = 0;
   circle.velocity.y = 0;
   circle.weaponAngle = 0;
@@ -44,7 +48,7 @@ function arena(level, tweak = {}) {
 
   const hits = [];
   s.engine.on('damage', (d) => hits.push(d));
-  return { ...s, circle, hits, tier: s.engine.weaponTier(level) };
+  return { ...s, circle, hits, tier: s.engine.weaponTier(circle.attack) };
 }
 
 /** 円に触れない距離 (武器でしか届かない)。 */
@@ -55,7 +59,7 @@ function outside(circle, enemy) {
 // ----------------------------------------------------------- 当たり判定
 
 test('武器は円に触れていない敵にも届く', () => {
-  const a = arena(40);                       // PLASMA AXE
+  const a = arena(330);                       // PLASMA AXE
   const enemy = place(a, a.circle, 0, 10);
   const distance = outside(a.circle, enemy);
   enemy.position.x = a.circle.position.x + distance;
@@ -70,7 +74,7 @@ test('武器は円に触れていない敵にも届く', () => {
 });
 
 test('刃の向きから外れた敵には当たらない', () => {
-  const a = arena(10);                       // NEON BLADE。腕は 1 本、角度 0
+  const a = arena(100);                       // NEON BLADE。腕は 1 本、角度 0
   const enemy = place(a, a.circle, Math.PI, 0);
   const distance = outside(a.circle, enemy);
   enemy.position.x = a.circle.position.x - distance;   // 真後ろ
@@ -80,7 +84,7 @@ test('刃の向きから外れた敵には当たらない', () => {
 });
 
 test('武器が回ると、当たる相手が入れ替わる', () => {
-  const a = arena(10, { weapons: {} });      // 回転はそのまま (spin 2.6)
+  const a = arena(100, { weapons: {} });      // 回転はそのまま (spin 2.6)
   const tier = makeConfig().weapons.tiers.find((t) => t.id === 'blade');
   assert.ok(tier.spin > 0, '回っていない');
 
@@ -101,7 +105,7 @@ test('武器が回ると、当たる相手が入れ替わる', () => {
 
 test('腕の向き (offset) は絵と揃っている', () => {
   // PLASMA CANNON は円の真横に砲を出すので、当たるのも真横だけ
-  const a = arena(70);
+  const a = arena(590);
   const side = place(a, a.circle, Math.PI / 2, 10);
   const front = place(a, a.circle, 0, 10);
   const distance = outside(a.circle, side);
@@ -117,7 +121,7 @@ test('腕の向き (offset) は絵と揃っている', () => {
 });
 
 test('Lv1〜9 は武器を持たないので、武器では当たらない', () => {
-  const a = arena(5);
+  const a = arena(40);
   assert.strictEqual(a.tier.hit, null);
 
   const enemy = place(a, a.circle, 0, 10);
@@ -128,7 +132,7 @@ test('Lv1〜9 は武器を持たないので、武器では当たらない', () 
 });
 
 test('武器は間隔を空けてしか当たらない', () => {
-  const a = arena(40);
+  const a = arena(330);
   const enemy = place(a, a.circle, 0, 10);
   enemy.position.x = a.circle.position.x + outside(a.circle, enemy);
 
@@ -142,7 +146,7 @@ test('武器は間隔を空けてしか当たらない', () => {
 // ------------------------------------------------------------- 特殊能力
 
 test('CLEAVE は一振りで複数の敵に当たる', () => {
-  const a = arena(40);                       // maxTargets 3
+  const a = arena(330);                       // maxTargets 3
   const enemies = [-0.3, 0, 0.3].map((angle) => {
     const e = place(a, a.circle, angle, 10);
     const d = outside(a.circle, e);
@@ -157,7 +161,7 @@ test('CLEAVE は一振りで複数の敵に当たる', () => {
 });
 
 test('当たる敵の数には上限がある', () => {
-  const a = arena(10);                       // NEON BLADE は能力なし = 1 体まで
+  const a = arena(100);                       // NEON BLADE は能力なし = 1 体まで
   for (const angle of [-0.15, 0, 0.15]) {
     const e = place(a, a.circle, angle, 10);
     const d = outside(a.circle, e);
@@ -171,7 +175,7 @@ test('当たる敵の数には上限がある', () => {
 });
 
 test('LIFESTEAL は斬ったぶんだけ HP が戻る', () => {
-  const a = arena(50);                       // ENERGY SCYTHE
+  const a = arena(410);                       // ENERGY SCYTHE
   const ability = a.tier.ability;
   assert.ok(ability.lifesteal > 0);
 
@@ -193,7 +197,7 @@ test('LIFESTEAL は斬ったぶんだけ HP が戻る', () => {
 });
 
 test('LIFESTEAL でも最大 HP は超えない', () => {
-  const a = arena(50);
+  const a = arena(410);
   const angle = a.tier.hit.offset;
   const enemy = place(a, a.circle, angle, 10);
   const d = outside(a.circle, enemy);
@@ -205,8 +209,8 @@ test('LIFESTEAL でも最大 HP は超えない', () => {
 });
 
 test('BARRAGE は武器の間隔が短い', () => {
-  const base = arena(40);                    // rate なし
-  const fast = arena(70);                    // rate 0.55
+  const base = arena(330);                    // rate なし
+  const fast = arena(590);                    // rate 0.55
   assert.strictEqual(base.tier.ability.rate, undefined);
   assert.ok(fast.tier.ability.rate < 1);
 
@@ -225,8 +229,8 @@ test('BARRAGE は武器の間隔が短い', () => {
 });
 
 test('AEGIS は受けるダメージを減らす', () => {
-  const plain = arena(70);                   // damageTaken なし
-  const tough = arena(80);                   // damageTaken 0.6
+  const plain = arena(590);                   // damageTaken なし
+  const tough = arena(680);                   // damageTaken 0.6
   assert.strictEqual(plain.tier.ability.damageTaken, undefined);
   assert.ok(tough.tier.ability.damageTaken < 1);
 
@@ -238,7 +242,7 @@ test('AEGIS は受けるダメージを減らす', () => {
 });
 
 test('NOVA は射程内の敵を全部まとめて殴る', () => {
-  const a = arena(100);                      // LEGENDARY CORE
+  const a = arena(880);                      // LEGENDARY CORE
   const nova = a.tier.ability.nova;
   assert.ok(nova, 'NOVA が無い');
 
@@ -275,7 +279,7 @@ test('NOVA は射程内の敵を全部まとめて殴る', () => {
 });
 
 test('NOVA を持たない段では衝撃波が出ない', () => {
-  const a = arena(90);
+  const a = arena(780);
   assert.strictEqual(a.tier.ability.nova, undefined);
 
   const e = place(a, a.circle, 0, 10);

@@ -202,25 +202,24 @@ test('装填中にまた行動したら、その弾が強くなる (円は増え
   const a = arena();
   const user = { id: 'u1', uniqueId: 'yui' };
 
-  a.send({ type: 'member', user });                    // Lv20 が装填される
-  const pending = a.cannon.pendingFor('u1');
-  assert.ok(pending, '装填されていない');
+  a.send({ type: 'member', user });                    // 入室ぶんが装填される
+  assert.ok(a.cannon.pendingFor('u1'), '装填されていない');
 
-  a.send({ type: 'like', count: 100, user });          // +10 レベル
+  a.send({ type: 'like', count: 100, user });          // HP +10 ポイント
   assert.strictEqual(a.cannon.pendingCount('u1'), 1, '弾が 2 つになっている');
-  assert.strictEqual(pending.level, 30, '装填中の弾が強くなっていない');
 
   drain(a);
   assert.strictEqual(a.engine.circles.length, 1);
-  assert.strictEqual(a.engine.circles[0].level, 30);
+  // 入室の 3 + いいねの 10 が、撃たれた 1 つの円にまとまって乗ります
+  assert.strictEqual(a.engine.circles[0].points.hp, 13, '装填中の弾が強くなっていない');
 });
 
-test('保有上限は大砲の中のぶんも数える', () => {
+test('保有上限 (1 人 1 つ) は大砲の中のぶんも数える', () => {
   const a = arena();
   const user = { id: 'u1', uniqueId: 'yui' };
   const cap = a.config.viewers.limits.maxPerUser;
 
-  // 本番と同じ経路で、上限より多く送る
+  // 本番と同じ経路で、続けざまに送る
   for (let i = 0; i < cap + 3; i += 1) {
     a.send({ type: 'gift', diamondCount: 100, user });
     a.advance(20);
@@ -231,7 +230,10 @@ test('保有上限は大砲の中のぶんも数える', () => {
 
   drain(a);
   assert.strictEqual(a.engine.circles.filter((c) => c.ownerId === 'u1').length, cap);
-  assert.ok(a.session._player('u1').queue.length > 0, '溢れたぶんが順番待ちに積まれていない');
+  // 送ったぶんは全部、その 1 つの円へ乗ります (上限まで)
+  const cape = a.engine.maxPointsOf('attack');
+  assert.strictEqual(a.engine.circles.find((c) => c.ownerId === 'u1').points.attack, cape,
+    '送ったギフトのぶんが乗っていない');
 });
 
 test('入っただけでは点が入らない', () => {

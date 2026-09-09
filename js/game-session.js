@@ -4,10 +4,16 @@
  *   Game Event  ->  GameSession  ->  BattleEngine (円を出す)
  *                              \->  Leaderboard  (点を入れる)
  *
- * ここが持つルールは 2 つだけです。
+ * ここが持つルールは 3 つだけです。
  *
- *   1. どのイベントで、どれだけの強さの円を何個出すか
+ *   1. どのイベントで、どの力が増えるか (いいね→HP / ギフト→攻撃力 /
+ *      シェア→ドレイン / フォロー→スパイク)
  *   2. 敵を倒したポイントを誰に配るか (LAST HIT / ダメージ配分)
+ *   3. 視聴者どうしの撃破を誰に付けるか
+ *
+ * **円は 1 人 1 つだけ**です。行動しても増えず、その 1 つが強くなります。
+ * 倒されて消えても、貯めた力は人のほうに残るので、次の行動で同じ強さのまま
+ * もう一度撃ち出されます。
  *
  * TikTok の語彙 (giftId, diamondCount, ...) はここには届きません。
  * 届くのは event-router.js が翻訳した LIKE / FOLLOW / SHARE / GIFT / COMMENT だけです。
@@ -28,15 +34,17 @@
     this.now = options.now || function () { return Date.now(); };
     this.liveId = options.liveId || 'live-1';
 
-    /** userId -> まだレベルになっていない LIKE の端数。 */
+    /** userId -> まだ 1 ポイントに届いていない LIKE の端数。 */
     this.likeBuckets = {};
     /** userId -> user。順番待ちの円を出すときに、名前とアイコンが要ります。 */
     this.users = {};
     /**
-     * userId -> { circleId, joined, queue }
-     *   circleId … いま育てている円
-     *   joined   … 入室ボーナスを渡したか
-     *   queue    … 順番待ちの円 (レベルの配列)。テトリスの NEXT と同じです。
+     * userId -> { circleId, joined, followed, points, queue }
+     *   circleId … いま持っている円
+     *   joined   … 入室ぶんを渡したか
+     *   followed … フォローぶん (スパイク) を渡したか
+     *   points   … **貯めた力**。円が倒されても残ります
+     *   queue    … 順番待ち。1 人 1 つになったので普段は使いません
      */
     this.players = {};
     /** 本物の視聴者イベントを受け取ったか (デモを止める判断に使う)。 */
@@ -108,10 +116,38 @@
 
     this.engine.on('enemy:killed', function (kill) { self._award(kill); });
 
-    // 円が 1 つ減ったら、その人の順番待ちから次を出します
+    // 円が 1 つ減ったら、その人の順番待ちから次を出します。
+    // 他の人の円に倒されたのなら、倒したほうへポイントを入れます。
     this.engine.on('circle:removed', function (removed) {
-      self._releaseQueued(removed.circle.ownerId, removed.reason, self.now());
+      var at = self.now();
+      self._awardPvp(removed, at);
+      self._releaseQueued(removed.circle.ownerId, removed.reason, at);
     });
+  };
+
+  /**
+   * 視聴者どうしの撃破にポイントを入れる。
+   *
+   * **入るのは相手が貯めたぶんに比例した点**です。固定にすると、入りたての
+   * 円を狩り続けるのがいちばん効率のいい戦い方になってしまいます。
+   * 強い相手を倒したときだけ大きく入るので、狩る旨みがありません。
+   */
+  GameSession.prototype._awardPvp = function (removed, at) {
+    var pvp = this.config.viewers.pvp;
+    if (!pvp || !pvp.enabled || !removed.by) return null;
+
+    var killer = this.users[removed.by.ownerId];
+    if (!killer) return null;
+    if (!this._creditable({ demo: removed.by.demo, ownerId: removed.by.ownerId })) return null;
+
+    var points = Math.max(pvp.minPoints,
+      Math.round(removed.circle.power * pvp.pointsPerVictimPoint));
+
+    if (this.leaderboard) this.leaderboard.addKill(killer, points, 1, at);
+    this.emit('ko', {
+      killer: killer, victim: removed.circle, points: points, at: at
+    });
+    return points;
   };
 
   /**
@@ -222,9 +258,46 @@
 
   // ------------------------------------------------------------ レベル
 
+  /**
+   * その人の記録。
+   *
+   * **ポイントは人が持ちます** (円ではありません)。円が倒されても
+   * ここは残るので、次の行動で同じ強さのまま撃ち出せます。
+   */
   GameSession.prototype._player = function (userId) {
     return this.players[userId] ||
-      (this.players[userId] = { circleId: null, joined: false, queue: [] });
+      (this.players[userId] = {
+        circleId: null,
+        joined: false,
+        followed: false,
+        points: { hp: 0, attack: 0, drain: 0, spike: 0 },
+        queue: []
+      });
+  };
+
+  /** その人が貯めたポイントの合計。 */
+  GameSession.prototype.powerOf = function (userId) {
+    var p = this._player(userId).points;
+    return p.hp + p.attack + p.drain + p.spike;
+  };
+
+  /** 上限に収めながらポイントを足す。実際に増えたぶんを返します。 */
+  GameSession.prototype._addPoints = function (userId, add) {
+    var stats = this.config.viewers.stats;
+    var points = this._player(userId).points;
+    var gained = { hp: 0, attack: 0, drain: 0, spike: 0 };
+
+    for (var key in gained) {
+      if (!Object.prototype.hasOwnProperty.call(gained, key)) continue;
+      var want = Math.max(0, Math.floor((add && add[key]) || 0));
+      if (!want) continue;
+      var cap = stats[key] && stats[key].max > 0
+        ? Math.floor(stats[key].max / stats[key].per) : Infinity;
+      var next = Math.min(points[key] + want, cap);
+      gained[key] = next - points[key];
+      points[key] = next;
+    }
+    return gained;
   };
 
   /**
@@ -252,25 +325,26 @@
     return this._queueOnly(user, spec);
   };
 
-  /** 順番待ちの列に積むだけ (フィールドにも大砲にも入れません)。 */
+  /**
+   * 順番待ちの列に積むだけ (フィールドにも大砲にも入れません)。
+   *
+   * 1 人 1 つになったので普段は使いません。行動は今ある円に足されるので、
+   * ここへ来るのは「大砲の中で待っている間に上限へ当たった」ときだけです。
+   */
   GameSession.prototype._queueOnly = function (user, spec) {
     var limits = this.config.viewers.limits;
     var player = this._player(user.id);
-    var max = this.config.viewers.levels.max;
 
     if (player.queue.length < limits.queue) {
-      player.queue.push({ level: Math.min(spec.level, max), sourceEvent: spec.sourceEvent });
-    } else {
-      // 列も満杯。最後の円に足して強くする
-      var last = player.queue[player.queue.length - 1];
-      last.level = Math.min(last.level + spec.level, max);
+      player.queue.push({ sourceEvent: spec.sourceEvent });
+      this._syncQueue(user, spec.at);
+      this.emit('queued', {
+        user: user, sourceEvent: spec.sourceEvent,
+        waiting: player.queue.length, at: spec.at
+      });
     }
-
-    this._syncQueue(user, spec.at);
-    this.emit('queued', {
-      user: user, level: spec.level, sourceEvent: spec.sourceEvent,
-      waiting: player.queue.length, at: spec.at
-    });
+    // 列に積めなくても、貯めたポイントは既に人のほうへ入っています。
+    // 送ったぶんが消えてなくなることはありません。
     return null;
   };
 
@@ -300,7 +374,7 @@
     if (!user) return null;
 
     var circle = this.spawnFor(user, {
-      level: next.level,
+      points: player.points,
       sourceEvent: next.sourceEvent,
       at: at
     });
@@ -309,50 +383,56 @@
   };
 
   /**
-   * レベルを上げる。ここがこのゲームの中心です。
+   * 力を足す。ここがこのゲームの中心です。
    *
-   *   1. その人がいま育てている円があれば、その円を育てる
-   *   2. 無ければ (まだ 1 つも無い / 力尽きた) 新しい円を作る
-   *   3. 上限 (100) の円しか無ければ、その円はそのままにして新しい円を作る
+   * レベルという 1 本の物差しはやめました。行動ごとに**別の力**が付きます:
    *
-   * 3 の新しい円は「その行動ぶんのレベル」で生まれます。
-   * 10 LIKE なら 1 レベル、50 コインのギフトなら 50 レベルです。
+   *   いいね   → HP        タダで押せる。硬くなって盤面に残る
+   *   ギフト   → 攻撃力    お金を払った人がいちばん強く殴れる
+   *   シェア   → ドレイン  与えたダメージのぶんだけ回復する
+   *   フォロー → スパイク  360° の棘。触れてきた相手を刺し返す
    *
+   * ポイントは**人が持ちます**。円が倒されても消えないので、
+   *
+   *   1. 円があれば、その円に足す
+   *   2. 大砲の中で待っているなら、撃たれる弾に反映される (人のぶんを写すだけ)
+   *   3. 円が無ければ (倒された / まだ出ていない)、**その場で撃ち出す**
+   *
+   * 3 が「倒れても、何か行動すればまた出てくる」の実体です。
+   *
+   * @param {object} add { hp, attack, drain, spike } 増やすポイント
    * @returns {object|null} 育てた / 作った円
    */
-  GameSession.prototype.gainLevels = function (user, levels, sourceEvent, at) {
-    var gained = Math.max(0, Math.floor(levels));
-    if (!gained) return null;
+  GameSession.prototype.gainPoints = function (user, add, sourceEvent, at) {
+    var gained = this._addPoints(user.id, add);
+    var any = gained.hp + gained.attack + gained.drain + gained.spike;
 
     var player = this._player(user.id);
-    var circle = player.circleId ? this.engine.circleOf(user.id, player.circleId) : null;
-    var max = this.config.viewers.levels.max;
+    if (this.leaderboard) this.leaderboard.setPower(user, this.powerOf(user.id), at);
 
-    // 大砲の中で待っている弾があるなら、そちらを強くします。
-    // ここで新しく積むと、1 回の入室のあとの LIKE で円が 2 つになります。
-    // ただし、その弾がもう最大レベルなら足せません。足せないぶんを黙って
-    // 飲み込むと、続けて送ったギフトが無かったことになります。
+    var circle = player.circleId ? this.engine.circleOf(user.id, player.circleId) : null;
+
+    // 大砲の中で待っている弾があるなら、そちらは撃つときに人のポイントを
+    // 読むので何もしません。ここで新しく積むと円が 2 つになります。
     var pending = this.launcher && this.launcher.pendingFor(user.id);
-    if (!circle && pending && pending.level < max) {
-      pending.level = Math.min(pending.level + gained, max);
-      if (this.leaderboard) this.leaderboard.setLevel(user, pending.level, at);
+    if (!circle && pending) {
+      pending.points = player.points;
       return null;
     }
 
-    if (circle && circle.level < max) {
-      var before = circle.level;
-      this.engine.levelUp(circle, gained, at);
-      if (this.leaderboard) this.leaderboard.setLevel(user, circle.level, at);
-      this.emit('levelup', {
-        user: user, circle: circle, from: before, to: circle.level,
+    if (circle) {
+      if (!any) return circle;                 // 全部の力が上限に届いている
+      this.engine.addPoints(circle, gained, at);
+      this.emit('grew', {
+        user: user, circle: circle, gained: gained, points: player.points,
         sourceEvent: sourceEvent, at: at
       });
       return circle;
     }
 
-    // 円が無い / 上限に達している -> 新しい円を作る (満員なら順番待ち)
+    // 円が無い -> 貯めた力をそのまま持って、もう一度撃ち出す
     return this._spawnOrQueue(user, {
-      level: this.config.viewers.levels.restartAtActionLevel ? gained : 1,
+      points: player.points,
       sourceEvent: sourceEvent,
       at: at
     });
@@ -372,7 +452,7 @@
       displayName: user.displayName,
       profileImageUrl: user.profileImageUrl,
       sourceEvent: spec.sourceEvent,
-      level: spec.level,
+      points: spec.points || this._player(user.id).points,
       demo: Boolean(user.demo),
       // 大砲から撃つときだけ付きます (出る場所・向き・飛んでいる時間)
       x: spec.x,
@@ -389,13 +469,13 @@
     this._player(user.id).circleId = circle.id;
     this.stats.circles += 1;
 
-    if (this.leaderboard) this.leaderboard.setLevel(user, circle.level, spec.at);
+    if (this.leaderboard) this.leaderboard.setPower(user, circle.power, spec.at);
 
     this.emit('spawn', {
       user: user,
       sourceEvent: spec.sourceEvent,
       count: 1,
-      level: circle.level,
+      power: circle.power,
       circle: circle,
       circles: [circle]
     });
@@ -434,62 +514,86 @@
   };
 
   /**
-   * LIKE: 10 いいねで 1 レベル。
+   * LIKE: 10 いいねで HP が 1 ポイント。
    *
-   * 端数はユーザーごとに持ち越します。7 + 5 = 12 で 1 レベル上がり、
-   * 2 が次へ残ります。「まとめて 100 LIKE」なら一度に 10 レベルです。
+   * **タダで押せる行動が、盤面に居続ける力になります。** 端数はユーザーごとに
+   * 持ち越します。7 + 5 = 12 で 1 ポイント、2 が次へ残ります。
    */
   GameSession.prototype._onLike = function (user, event, at) {
-    var levels = this.config.viewers.levels;
+    var gain = this.config.viewers.gain;
     var count = Math.max(1, Math.floor(event.count || 1));
     this.stats.likes += count;
 
     var bucket = (this.likeBuckets[user.id] || 0) + count;
-    var gained = Math.floor(bucket / levels.likesPerLevel);
-    this.likeBuckets[user.id] = bucket - gained * levels.likesPerLevel;
+    var gained = Math.floor(bucket / gain.likesPerPoint);
+    this.likeBuckets[user.id] = bucket - gained * gain.likesPerPoint;
 
     if (this.leaderboard) this.leaderboard.touch(user, at);
     if (!gained) return null;
 
-    return this.gainLevels(user, gained, 'LIKE', at);
-  };
-
-  GameSession.prototype._onFollow = function (user, event, at) {
-    this.stats.follows += 1;
-    return this.gainLevels(user, this.config.viewers.levels.follow, 'FOLLOW', at);
-  };
-
-  GameSession.prototype._onShare = function (user, event, at) {
-    this.stats.shares += 1;
-    return this.gainLevels(user, this.config.viewers.levels.share, 'SHARE', at);
+    return this.gainPoints(user, { hp: gained }, 'LIKE', at);
   };
 
   /**
-   * GIFT: コイン価値 -> レベル。
+   * FOLLOW: 360° のスパイクをまとう。
+   *
+   * 1 人 1 回だけです。入り直して何度ももらえると、フォローを外して
+   * 付け直す人が得をしてしまいます。
+   *
+   * 棘は触れてきた相手を刺し返し、威力は自分の最大 HP から出ます。
+   * **いいねしか押さない人でも、フォローさえしていれば戦えます。**
+   */
+  GameSession.prototype._onFollow = function (user, event, at) {
+    var gain = this.config.viewers.gain;
+    var player = this._player(user.id);
+    this.stats.follows += 1;
+
+    if (gain.followOncePerUser && player.followed) {
+      if (this.leaderboard) this.leaderboard.touch(user, at);
+      return null;
+    }
+    player.followed = true;
+
+    return this.gainPoints(user, { spike: gain.followPoints }, 'FOLLOW', at);
+  };
+
+  /**
+   * SHARE: ドレイン (与えたダメージのぶんだけ回復)。
+   *
+   * 配信を広める行為なので、回数は少なく価値は高い、という形にしてあります。
+   */
+  GameSession.prototype._onShare = function (user, event, at) {
+    this.stats.shares += 1;
+    return this.gainPoints(user, { drain: this.config.viewers.gain.sharePoints }, 'SHARE', at);
+  };
+
+  /**
+   * GIFT: コイン価値 -> 攻撃力。
    *
    * ギフトの名前も ID も見ません。価値の数字だけを見るので、
    * 新しいギフトが増えても何もしなくて済みます。
+   * 攻撃力が上がると**武器の段**も上がります (config.weapons.tiers)。
    */
   GameSession.prototype._onGift = function (user, event, at) {
     this.stats.gifts += 1;
-    var levels = this.engine.levelsFromGift(event.value);
-    return this.gainLevels(user, levels, 'GIFT', at);
+    var points = this.engine.attackPointsFromGift(event.value);
+    return this.gainPoints(user, { attack: points }, 'GIFT', at);
   };
 
   /**
-   * JOIN (入室): 最初の 1 回だけ、レベル 20 の円をもらえます。
+   * JOIN (入室): 最初の 1 回だけ、少しの HP を持って出撃します。
    *
    * 2 回目以降は何も起きません。入り直すだけで何度ももらえると、
    * 見ている人より出入りした人が得をしてしまうためです。
    */
   GameSession.prototype._onJoin = function (user, event, at) {
-    var levels = this.config.viewers.levels;
+    var gain = this.config.viewers.gain;
     var player = this._player(user.id);
 
     this.stats.joins += 1;
     if (this.leaderboard) this.leaderboard.touch(user, at);
 
-    if (levels.joinOncePerUser && player.joined) return null;
+    if (gain.joinOncePerUser && player.joined) return null;
     player.joined = true;
 
     /**
@@ -500,9 +604,9 @@
      * あくので、円とは別にここで 1 回だけ流します。2 回目以降の入室では
      * 流れません (出入りするだけで何度も名前が出てしまうため)。
      */
-    this.emit('join', { user: user, level: levels.join, at: at });
+    this.emit('join', { user: user, at: at });
 
-    return this._spawnOrQueue(user, { level: levels.join, sourceEvent: 'JOIN', at: at });
+    return this.gainPoints(user, gain.joinPoints, 'JOIN', at);
   };
 
   /**
@@ -519,15 +623,14 @@
     return null;
   };
 
-  /** LIKE の端数と、誰がどの円を育てているかを消す (次の配信を始めるときなど)。 */
   /**
-   * 次のレベルまであと何 LIKE か。
+   * 次の HP ポイントまであと何 LIKE か。
    *
    * 「あと 3 回」が見えると、そこで止めずにもう一押しする理由になります。
    * 画面に出すためだけの読み取りで、進行には影響しません。
    */
-  GameSession.prototype.likesToNextLevel = function (userId) {
-    var per = this.config.viewers.levels.likesPerLevel;
+  GameSession.prototype.likesToNextPoint = function (userId) {
+    var per = this.config.viewers.gain.likesPerPoint;
     return per - ((this.likeBuckets[userId] || 0) % per);
   };
 

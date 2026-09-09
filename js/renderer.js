@@ -420,7 +420,9 @@
     var hue = ownerHue(circle.ownerId);
     var color = 'hsl(' + hue + ', 90%, 65%)';
 
-    if (circle.maxedAt != null) this._drawAura(ctx, circle, x, y, r, now);
+    // 棘は円より**先に**描きます。あとから円を描けば、どんなに棘が長くても
+    // プロフィール画像の上には来ません。
+    if (circle.spikes > 0) this._drawSpikes(ctx, circle, x, y, r, now);
 
     var image = this.avatars ? this.avatars.get(circle.profileImageUrl) : null;
 
@@ -456,6 +458,8 @@
     ctx.stroke();
     ctx.setLineDash([]);
 
+    // 残り HP。**視聴者どうしも戦う**ので、あとどれだけ耐えられるかが
+    // 見えないと、勝負がついた瞬間しか分かりません。
     var ratio = Math.max(0, circle.hp / circle.maxHp);
     if (ratio < 1) {
       ctx.beginPath();
@@ -464,20 +468,69 @@
       ctx.lineWidth = Math.max(1, r * 0.10);
       ctx.stroke();
     }
+
+    // ドレイン (シェア) を持っている円は、内側に緑の輪が出ます。
+    // 削り合いで減らないのはこれが理由、と見て分かるようにするためです。
+    if (circle.drain > 0 && r > 9) {
+      ctx.beginPath();
+      ctx.arc(x, y, r * 0.82, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(52, 211, 153, ' + (0.3 + circle.drain).toFixed(2) + ')';
+      ctx.lineWidth = Math.max(1, r * 0.09);
+      ctx.stroke();
+    }
     ctx.restore();
   };
 
   /**
-   * レベルのバッジ。円の下に小さく出します。
+   * 360° のスパイク (フォロー)。
    *
-   * 育てるゲームなので、自分の円が今いくつなのかが見えないと張り合いが
-   * ありません。最大レベルは色を変えて、育てきったことが分かるようにします。
+   * 触れてきた相手を刺し返す力を、そのまま見た目にしたものです。
+   * **棘が見えている円には近寄ると痛い**、が絵だけで伝わるようにします。
+   * 本数はポイント、長さは強さ (棘のダメージ) で伸びます。
+   */
+  Renderer.prototype._drawSpikes = function (ctx, circle, x, y, r, now) {
+    var settings = this.config.viewers.spikes;
+    // 本数は持っているぶんに比例させます。入室ぶんの 1 本と、フォローした
+    // 4 本が同じ見た目だと、**フォローが飾りに見えます**。
+    var count = Math.max(settings.minCount,
+      Math.min(settings.maxCount, Math.round(circle.spikes) * settings.drawPerPoint));
+    if (r < 6) return;
+
+    // 棘のダメージが大きいほど長く。硬い円ほど長い棘をまといます。
+    var grow = 1 + Math.min(1.2, circle.spikeDamage / (settings.damageBase * 6));
+    var length = r * settings.reach * grow;
+    var spin = now / 2600;                 // ゆっくり回すと、生き物らしく見えます
+    // 本数が少ないときに 1 本が太くなりすぎないよう、幅に上限を掛けます
+    var half = Math.min(0.2, Math.PI / count * 0.42);
+
+    ctx.save();
+    ctx.beginPath();
+    for (var i = 0; i < count; i += 1) {
+      var a = spin + (i / count) * Math.PI * 2;
+      ctx.moveTo(x + Math.cos(a - half) * r * 0.94, y + Math.sin(a - half) * r * 0.94);
+      ctx.lineTo(x + Math.cos(a) * (r + length), y + Math.sin(a) * (r + length));
+      ctx.lineTo(x + Math.cos(a + half) * r * 0.94, y + Math.sin(a + half) * r * 0.94);
+      ctx.closePath();
+    }
+    ctx.fillStyle = '#e2e8f0';
+    ctx.shadowColor = 'rgba(226, 232, 240, 0.7)';
+    ctx.shadowBlur = Math.min(14, r * 0.4);
+    ctx.fill();
+    ctx.restore();
+  };
+
+  /**
+   * 力のバッジ。円の下に小さく出します。
+   *
+   * 出す数字は**貯めたポイントの合計**です。いいねでも、ギフトでも、
+   * シェアでも、フォローでも増えるので、どの道で参加した人にも
+   * 「増えている」が見えます。
    */
   Renderer.prototype._drawLevel = function (ctx, circle, scale) {
     var r = circle.radius * scale;
     if (r < 11) return;                     // 小さすぎて読めないものは出さない
 
-    var badge = this._levelBadge(circle.level);
+    var badge = this._levelBadge(circle.power);
     if (!badge) return;
 
     // バッジは**円の中**に収めます。円の外に出すと、円が密集したときに
@@ -500,14 +553,15 @@
    * 文字を毎フレーム組むと、円が 200 個あるだけで 1ms 近くかかります
    * (実測で描画時間の 4 割)。絵にしておけば貼るだけで済みます。
    */
-  Renderer.prototype._levelBadge = function (level) {
+  Renderer.prototype._levelBadge = function (power) {
     if (!this._badges) this._badges = {};
-    if (this._badges[level]) return this._badges[level];
+    if (this._badges[power]) return this._badges[power];
     if (!this.doc) return null;
 
-    var max = this.engine.maxLevel ? this.engine.maxLevel() : 100;
-    var maxed = level >= max;
-    var text = maxed ? 'MAX' : 'Lv' + level;
+    // 1000 を超えたら 1.2k のように縮めます。桁が増えると、円の中で
+    // 文字が小さくなって結局読めません。
+    var maxed = false;
+    var text = power >= 1000 ? (power / 1000).toFixed(1) + 'k' : String(power);
 
     // 元絵は大きめに作り、貼るときに縮めます (拡大するとぼやけるため)
     var font = 44;
@@ -538,8 +592,8 @@
     ctx.fillStyle = maxed ? '#1b1200' : '#ffffff';
     ctx.fillText(text, width / 2, height / 2 + 1);
 
-    this._badges[level] = { canvas: canvas, ratio: width / height };
-    return this._badges[level];
+    this._badges[power] = { canvas: canvas, ratio: width / height };
+    return this._badges[power];
   };
 
   /**
@@ -600,45 +654,6 @@
       ctx.fillText(item.label, x, y + r * 1.35);
       ctx.restore();
     }
-  };
-
-  /**
-   * 最大レベルの円のオーラ。
-   *
-   * 虹色のリングが回り、その外側に「暴れていられる残り時間」が出ます。
-   * 画面のどれが今いちばん危険な円なのかが、ひと目で分かります。
-   */
-  Renderer.prototype._drawAura = function (ctx, circle, x, y, r, now) {
-    var spin = now / 900;
-    var pulse = 1 + Math.sin(now / 160) * 0.05;
-    var outer = r * 1.42 * pulse;
-    var steps = 12;
-
-    ctx.save();
-
-    // 虹色のリング (円弧を 12 本つないで作ります)
-    ctx.lineWidth = Math.max(2.5, r * 0.3);
-    ctx.lineCap = 'butt';
-    for (var i = 0; i < steps; i += 1) {
-      var from = spin + (i / steps) * Math.PI * 2;
-      var to = spin + ((i + 1.15) / steps) * Math.PI * 2;
-      ctx.beginPath();
-      ctx.arc(x, y, outer, from, to);
-      ctx.strokeStyle = 'hsla(' + Math.round((i / steps) * 360 + now / 12) % 360 + ', 100%, 62%, 0.85)';
-      ctx.stroke();
-    }
-
-    // 残り時間 (延ばせるので、いっぱいのときは 1 周のまま)
-    if (circle.burstUntil != null && circle.burstUntil !== Infinity) {
-      var total = this.config.viewers.levels.maxDurationMs;
-      var left = Math.max(0, Math.min(1, (circle.burstUntil - now) / total));
-      ctx.beginPath();
-      ctx.arc(x, y, outer + ctx.lineWidth * 0.9, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * left);
-      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-      ctx.lineWidth = Math.max(1.5, r * 0.09);
-      ctx.stroke();
-    }
-    ctx.restore();
   };
 
   /**
@@ -1123,7 +1138,7 @@
     var settings = this.config.weapons.attackEffects;
     if (circle.radius * this.scale < settings.minRadiusPx) return;
 
-    var tier = weapons.tierFor(circle.level);
+    var tier = weapons.tierFor(circle.attack);
     if (!tier.attack) return;                       // Lv1〜9 は武器が無いので出しません
 
     var dx = target.position.x - circle.position.x;
@@ -1164,7 +1179,7 @@
 
     for (var i = 0; i < circles.length; i += 1) {
       var circle = circles[i];
-      var tier = engine.weaponTier ? engine.weaponTier(circle.level) : null;
+      var tier = engine.weaponTier ? engine.weaponTier(circle.attack) : null;
       var hit = tier && tier.hit;
       if (!hit) continue;
 
@@ -1407,9 +1422,9 @@
         row.img.onerror = function () { this.hidden = true; };   // 取れなければ頭文字に戻す
       }
 
-      if (record.maxLevel > 0) {
+      if (record.maxPower > 0) {
         // 順番待ちがあれば「Lv100 +2」のように出します
-        row.level.textContent = 'Lv' + record.maxLevel + (record.queued > 0 ? ' +' + record.queued : '');
+        row.level.textContent = 'P' + record.maxPower + (record.queued > 0 ? ' +' + record.queued : '');
         row.level.hidden = false;
       } else {
         row.level.hidden = true;
@@ -1429,11 +1444,11 @@
    * 設定を変えれば表示も変わります (説明と実際がずれません)。
    */
   Renderer.prototype._howToPlay = function () {
-    var levels = this.config.viewers.levels;
-    return 'LIKE \u00d7' + levels.likesPerLevel + ' \u2192 Lv+1' +
-           '   FOLLOW \u2192 Lv+' + levels.follow +
-           '   SHARE \u2192 Lv+' + levels.share +
-           '   GIFT \u2192 Lv+' + levels.giftLevelsPerCoin + '/coin';
+    var gain = this.config.viewers.gain;
+    return 'LIKE \u00d7' + gain.likesPerPoint + ' \u2192 +HP' +
+           '   GIFT \u2192 +ATK' +
+           '   SHARE \u2192 +DRAIN' +
+           '   FOLLOW \u2192 SPIKES';
   };
 
   // ---------------------------------------------------------- 通知/状態

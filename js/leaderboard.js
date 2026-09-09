@@ -7,8 +7,8 @@
  *   kills            倒した敵の数
  *   damage           与えた総ダメージ
  *   score            撃破ポイントの合計
- *   level            いま育てている円のレベル
- *   maxLevel         これまでに届いた一番上のレベル
+ *   power            貯めたポイントの合計 (HP + 攻撃力 + ドレイン + スパイク)
+ *   maxPower         これまでに届いた一番上の合計
  *   lastActivity     最後に何かした時刻 (ミリ秒)
  *
  * チームの概念はありません。並ぶのは常に個人です。
@@ -73,8 +73,8 @@
         kills: 0,
         damage: 0,
         score: 0,
-        level: 0,
-        maxLevel: 0,
+        power: 0,
+        maxPower: 0,
         /** 順番待ちの円の数 (フィールドが自分の上限で埋まっているとき)。 */
         queued: 0,
         lastActivity: at != null ? at : this.now(),
@@ -111,13 +111,13 @@
 
   /**
    * いま育てている円のレベルを記録する。
-   * maxLevel は下がりません (最大まで育てた実績は残ります)。
+   * maxPower は下がりません (貯めた実績は残ります)。
    */
-  Leaderboard.prototype.setLevel = function (user, level, at) {
+  Leaderboard.prototype.setPower = function (user, power, at) {
     var record = this.touch(user, at);
     if (!record) return null;
-    record.level = level;
-    if (level > record.maxLevel) record.maxLevel = level;
+    record.power = power;
+    if (power > record.maxPower) record.maxPower = power;
     this._changed();
     return record;
   };

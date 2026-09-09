@@ -76,4 +76,21 @@ function setup(options = {}) {
   };
 }
 
-module.exports = { setup, makeConfig, seededRandom };
+/**
+ * その攻撃力になるポイント数。
+ *
+ * 攻撃力 = base.attack + ポイント × stats.attack.per なので、
+ * テストが「PLASMA AXE の段」を作りたいときはこれを通します。
+ */
+function attackPoints(config, attack) {
+  const viewers = config.viewers;
+  return Math.max(0, Math.ceil((attack - viewers.base.attack) / viewers.stats.attack.per));
+}
+
+/** その HP になるポイント数。 */
+function hpPoints(config, hp) {
+  const viewers = config.viewers;
+  return Math.max(0, Math.ceil((hp - viewers.base.hp) / viewers.stats.hp.per));
+}
+
+module.exports = { setup, makeConfig, seededRandom, attackPoints, hpPoints };

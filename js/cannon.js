@@ -138,7 +138,8 @@
 
     var shot = {
       user: user,
-      level: spec.level,
+      /** 撃つ瞬間に持たせるポイント。持ち主のものをそのまま写します。 */
+      points: spec.points,
       sourceEvent: spec.sourceEvent || null,
       at: spec.at != null ? spec.at : this.now(),
       type: this.typeFor(spec.sourceEvent)
@@ -270,7 +271,7 @@
     var jitter = 1 + (this.random() * 2 - 1) * (s.speedJitter || 0);
 
     var circle = this.session.spawnFor(shot.user, {
-      level: shot.level,
+      points: shot.points,
       sourceEvent: shot.sourceEvent,
       at: now,
       // これが付いていると、GameSession はもう大砲へ回さずそのまま作ります

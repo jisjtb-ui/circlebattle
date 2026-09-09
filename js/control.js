@@ -25,19 +25,19 @@
       { path: 'enemies.spawn.maxAlive', label: 'MAX ALIVE', min: 8, max: 120, step: 2 },
       { path: 'enemies.spawn.minAlive', label: 'MIN ALIVE', min: 0, max: 40, step: 1 },
       { path: 'enemies.scale.hpPerTotalLevel', label: 'HP SCALING', min: 200, max: 4000, step: 100 },
-      { path: 'director.roundMs', label: 'ROUND TIME', min: 60000, max: 1800000, step: 60000, unit: 'ms' },
+      { path: 'director.roundMs', label: 'ROUND TIME', min: 60000, max: 1800000, step: 60000, minutes: true },
       { path: 'director.eventEveryMs', label: 'EVENT EVERY', min: 20000, max: 300000, step: 10000, unit: 'ms' },
       { path: 'director.eventChance', label: 'EVENT CHANCE', min: 0, max: 1, step: 0.05 }
     ],
     viewers: [
-      { path: 'viewers.levels.likesPerLevel', label: 'LIKES / LEVEL', min: 1, max: 50, step: 1 },
-      { path: 'viewers.levels.follow', label: 'FOLLOW', min: 0, max: 100, step: 1, unit: 'Lv' },
-      { path: 'viewers.levels.share', label: 'SHARE', min: 0, max: 100, step: 1, unit: 'Lv' },
-      { path: 'viewers.levels.join', label: 'JOIN', min: 0, max: 100, step: 1, unit: 'Lv' },
-      { path: 'viewers.levels.giftLevelsPerCoin', label: 'GIFT / COIN', min: 0.1, max: 5, step: 0.1, unit: 'Lv' },
-      { path: 'viewers.levels.maxDurationMs', label: 'MAX LV BURST', min: 3000, max: 60000, step: 1000, unit: 'ms' },
-      { path: 'viewers.limits.maxPerUser', label: 'CIRCLES / USER', min: 1, max: 10, step: 1 },
-      { path: 'viewers.limits.queue', label: 'QUEUE / USER', min: 0, max: 10, step: 1 },
+      { path: 'viewers.gain.likesPerPoint', label: 'LIKES / HP', min: 1, max: 50, step: 1 },
+      { path: 'viewers.stats.hp.per', label: 'HP / POINT', min: 10, max: 300, step: 10 },
+      { path: 'viewers.gain.attackPerCoin', label: 'ATK PTS / COIN', min: 0.1, max: 5, step: 0.1 },
+      { path: 'viewers.stats.attack.per', label: 'ATK / POINT', min: 1, max: 30, step: 1 },
+      { path: 'viewers.gain.sharePoints', label: 'SHARE → DRAIN', min: 0, max: 10, step: 1, unit: 'pt' },
+      { path: 'viewers.gain.followPoints', label: 'FOLLOW → SPIKE', min: 0, max: 12, step: 1, unit: 'pt' },
+      { path: 'viewers.pvp.damageRatio', label: 'PVP DAMAGE', min: 0, max: 1, step: 0.05 },
+      { path: 'viewers.spikes.damageBase', label: 'SPIKE DAMAGE', min: 0, max: 60, step: 2 },
       { path: 'items.spawn.intervalMs', label: 'ITEM EVERY', min: 3000, max: 60000, step: 1000, unit: 'ms' }
     ]
   };
@@ -73,7 +73,10 @@
     out.className = 'setting__value';
 
     function paint() {
-      out.textContent = input.value + (spec.unit ? ' ' + spec.unit : '');
+      // 分の単位で見せる値 (ラウンドの長さ)。ms のまま出すと桁が読めません
+      out.textContent = spec.minutes
+        ? Math.round(Number(input.value) / 60000) + ' min'
+        : input.value + (spec.unit ? ' ' + spec.unit : '');
     }
     paint();
 

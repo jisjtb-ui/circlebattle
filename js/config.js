@@ -193,10 +193,10 @@
       /** 武器が円の外へ出る量 (半径の倍率)。大きくすると隣の円と重なります。 */
       extent: 1.8,
       /**
-       * 武器の大きさ。Lv1 で minScale、Lv100 で maxScale になります。
+       * 武器の大きさ。段の下端で minScale、次の段の手前で maxScale になります。
        *
        * 段が変わると**形**が変わり、段の中では**大きさ**が少しずつ育ちます。
-       * レベルに対して切れ目なく上がるので、Lv19 の武器が Lv20 の武器より
+       * 攻撃力に対して切れ目なく上がるので、段の直前の武器が次の段の武器より
        * 大きく見える、という逆転が起きません。
        */
       minScale: 0.8,
@@ -225,8 +225,8 @@
       npcColor: '#5b6472',
       npcAlpha: 0.62,
 
-      /** この段に上がったときだけ画面中央に短い演出を出す。 */
-      milestones: [50, 100],
+      /** この段 (id) に上がったときだけ画面中央に短い演出を出す。 */
+      milestones: ['scythe', 'core'],
 
       /**
        * 武器の当たり判定。
@@ -256,7 +256,11 @@
       },
 
       /**
-       * Lv1〜100 を 10 段に分けたもの。minLevel は昇順。
+       * 武器の段。**攻撃力 (ギフト) で上がります。** minAttack は昇順。
+       *
+       * レベルをやめたので、段を決めるのは攻撃力です。ギフトを贈った人の
+       * 武器が育っていく形は変わりません。いいねしか押さない人には武器が
+       * 付きませんが、そのぶん HP とスパイクで戦えます (viewers.spikes)。
        *
        * ここに 1 行足せば段が増えます (描き方は js/weapons.js の PAINTERS に
        * 同じ id で足します)。
@@ -284,56 +288,56 @@
        */
       tiers: [
         {
-          minLevel: 1, id: 'none', name: 'NO WEAPON', color: '#94a3b8', attack: null,
+          minAttack: 0, id: 'none', name: 'NO WEAPON', color: '#94a3b8', attack: null,
           spin: 0, hit: null, ability: null
         },
         {
-          minLevel: 10, id: 'blade', name: 'NEON BLADE', color: '#38bdf8', attack: 'slash',
+          minAttack: 100, id: 'blade', name: 'NEON BLADE', color: '#38bdf8', attack: 'slash',
           spin: 2.6, hit: { arms: 1, arc: 0.22, reach: 1.62, damage: 1, layer: 'a' },
           ability: null
         },
         {
-          minLevel: 20, id: 'twin', name: 'TWIN BLADES', color: '#06b6d4', attack: 'twin',
+          minAttack: 170, id: 'twin', name: 'TWIN BLADES', color: '#06b6d4', attack: 'twin',
           spin: 3.0, hit: { arms: 2, arc: 0.2, reach: 1.66, damage: 1, layer: 'a' },
           ability: { name: 'TWIN STRIKE', maxTargets: 2 }
         },
         {
-          minLevel: 30, id: 'spear', name: 'ENERGY SPEAR', color: '#10b981', attack: 'thrust',
+          minAttack: 250, id: 'spear', name: 'ENERGY SPEAR', color: '#10b981', attack: 'thrust',
           spin: 2.4, hit: { arms: 1, arc: 0.18, reach: 1.82, damage: 1.45, layer: 'a' },
           ability: { name: 'PIERCE', maxTargets: 2 }
         },
         {
-          minLevel: 40, id: 'axe', name: 'PLASMA AXE', color: '#f59e0b', attack: 'impact',
+          minAttack: 330, id: 'axe', name: 'PLASMA AXE', color: '#f59e0b', attack: 'impact',
           spin: 2.1, hit: { arms: 1, arc: 0.48, reach: 1.78, damage: 1.6, layer: 'a' },
           ability: { name: 'CLEAVE', maxTargets: 3 }
         },
         {
-          minLevel: 50, id: 'scythe', name: 'ENERGY SCYTHE', color: '#8b5cf6', attack: 'sweep',
+          minAttack: 410, id: 'scythe', name: 'ENERGY SCYTHE', color: '#8b5cf6', attack: 'sweep',
           spin: 3.4, hit: { arms: 1, arc: 0.65, offset: 0.5, reach: 1.7, damage: 1.5, layer: 'a' },
           ability: { name: 'LIFESTEAL', maxTargets: 3, lifesteal: 0.35 }
         },
         {
-          minLevel: 60, id: 'chakram', name: 'TWIN CHAKRAMS', color: '#ec4899', attack: 'spin',
+          minAttack: 500, id: 'chakram', name: 'TWIN CHAKRAMS', color: '#ec4899', attack: 'spin',
           spin: 4.4, hit: { arms: 2, arc: 0.34, reach: 1.72, damage: 1.4, layer: 'b' },
           ability: { name: 'WHIRL', maxTargets: 4 }
         },
         {
-          minLevel: 70, id: 'cannon', name: 'PLASMA CANNON', color: '#ef4444', attack: 'bolt',
+          minAttack: 590, id: 'cannon', name: 'PLASMA CANNON', color: '#ef4444', attack: 'bolt',
           spin: 1.8, hit: { arms: 2, arc: 0.3, offset: Math.PI / 2, reach: 1.7, damage: 1.5, layer: 'a' },
           ability: { name: 'BARRAGE', maxTargets: 3, rate: 0.55 }
         },
         {
-          minLevel: 80, id: 'wings', name: 'ENERGY WINGS', color: '#3b82f6', attack: 'wing',
+          minAttack: 680, id: 'wings', name: 'ENERGY WINGS', color: '#3b82f6', attack: 'wing',
           spin: 2.2, hit: { arms: 3, arc: 0.6, reach: 1.76, damage: 1.5, layer: 'a' },
           ability: { name: 'AEGIS', maxTargets: 4, damageTaken: 0.6 }
         },
         {
-          minLevel: 90, id: 'orbital', name: 'ORBITAL WEAPON', color: '#a855f7', attack: 'multi',
+          minAttack: 780, id: 'orbital', name: 'ORBITAL WEAPON', color: '#a855f7', attack: 'multi',
           spin: 3.6, hit: { arms: 5, arc: 0.26, reach: 1.72, damage: 1.4, layer: 'b' },
           ability: { name: 'ORBIT STRIKE', maxTargets: 5, damageTaken: 0.8 }
         },
         {
-          minLevel: 100, id: 'core', name: 'LEGENDARY CORE', color: '#facc15', attack: 'core',
+          minAttack: 880, id: 'core', name: 'LEGENDARY CORE', color: '#facc15', attack: 'core',
           spin: 4.0, hit: { arms: 3, arc: 0.5, reach: 1.75, damage: 1.6, layer: 'b' },
           ability: {
             name: 'NOVA', maxTargets: 6, lifesteal: 0.2, rate: 0.7, damageTaken: 0.55,
@@ -575,75 +579,155 @@
     /**
      * 視聴者の円。
      *
-     * **円は増えるのではなく、育ちます。** 1 人が持つのは基本 1 つで、
-     * LIKE / FOLLOW / SHARE / GIFT でその円のレベルが上がっていきます。
+     * **1 人 1 つだけ**です。行動しても円は増えず、その 1 つが強くなります。
+     * レベルという 1 本の物差しはやめて、**行動ごとに別の力**が付きます。
      *
-     *   10 LIKE  ->  1 レベル
-     *   レベル 1 〜 100
+     *   いいね  →  HP        タダで押せる。押した人は硬くなって盤面に残る
+     *   ギフト  →  攻撃力    お金を払った人がいちばん強く殴れる
+     *   シェア  →  ドレイン  与えたダメージのぶんだけ回復する
+     *   フォロー →  スパイク  360° の棘。触れてきた相手を刺し返す
      *
-     * 100 に達した円はそのまま戦い続け、次の行動で新しい円が生まれます。
+     * 1 本の物差しだと「課金した人が全部の面で強い」になります。
+     * 別々の力にすると、**タダでも強くなれる道が残ります**:
+     *
+     *   いいね + フォロー … 硬くて、触れた相手を刺す壁。棘は HP で伸びる
+     *   ギフト            … 武器が育ち、遠くまで届く
+     *   シェア            … 長く殴り合うほど強い
+     *
+     * どれも一長一短にしてあるので、誰かが一方的に勝ち続けることはありません。
+     *
+     * 倒されると円は消えます。**次に何か行動すると、貯めた力をそのまま持って
+     * もう一度大砲から撃ち出されます。** 貯めた力は死んでも減りません
+     * (押した・贈った・広めたぶんを取り上げるのは筋が通らないため)。
+     * 倒された代償は「行動するまで盤面に居られない時間」です。
      */
     viewers: {
+
       /**
-       * レベルの決まりごと。
+       * 何も持っていない円の値。ここに下の stats が足されます。
        *
-       * 何をすると何レベル上がるかは全部ここです。
-       * 円の強さ (HP・攻撃力・大きさ) はレベルから計算されるので、
-       * バランスを変えたいときもこの表と scaling だけを触ります。
+       * radius はプロフィール画像が見える大きさにしてあります。
+       * 混んでくるとフィールドが広がる (画面はズームアウトする) ので、
+       * そのぶん円は小さく映ります。**顔と数字が読めることを、何個入るかより
+       * 優先**しています (field.expand の閾値もそれに合わせてあります)。
        */
-      levels: {
-        /** 上限。ここに達した円はそれ以上育ちません。 */
-        max: 100,
-
-        /** 何 LIKE で 1 レベルか。端数はユーザーごとに繰り越します。 */
-        likesPerLevel: 10,
-
-        /** FOLLOW で上がるレベル (100 LIKE と同じ)。 */
-        follow: 10,
-
-        /** SHARE で上がるレベル。 */
-        share: 5,
-
-        /**
-         * ギフト: コイン 1 につき何レベルか。
-         * 1 コイン (バラ 1 本) = 10 LIKE と同じ 1 レベル、
-         * 100 コインのギフトなら一気に最大レベルまで届きます。
-         */
-        giftLevelsPerCoin: 1,
-        /** ギフトで上がる最低レベル (価値が取れなかったとき用)。 */
-        giftMinLevels: 1,
-
-        /** 入室 (JOIN) したときにもらえる円のレベル。 */
-        join: 20,
-        /** 入室でもらえるのは 1 人 1 回だけにするか。 */
-        joinOncePerUser: true,
-
-        /**
-         * 最大レベルの円を持っている人が次に行動したとき、
-         * 新しい円は「その行動ぶんのレベル」で生まれます。
-         * 10 LIKE なら 1 レベル、50 コインのギフトなら 50 レベルです。
-         */
-        restartAtActionLevel: true,
-
-        /**
-         * 最大レベルに届いた円が暴れる時間 (ミリ秒)。0 で無期限。
-         *
-         * 育てきった円をずっと置いておくと、画面がだんだん最大レベルの円で
-         * 埋まっていき、1 体あたりの見せ場もありません。短い間だけ
-         * とんでもなく強くして稼がせ、燃え尽きて消える形にしています。
-         */
-        maxDurationMs: 20000,
-
-        /**
-         * 暴れている間の倍率。レベルから出した値にさらに掛かります。
-         * (画面では金色の円になり、残り時間が外周のリングで見えます)
-         */
-        maxBonus: {
-          attack: 2.5,
-          speed: 1.8
-        }
+      base: {
+        hp: 400,
+        attack: 40,
+        radius: 30,
+        speed: 165,
+        attackIntervalMs: 300
       },
 
+      /**
+       * 行動 → 何ポイント貯まるか。
+       *
+       * ポイントは**人**が持ちます (円ではありません)。倒されて円が消えても
+       * ポイントは残るので、次の行動で同じ強さのまま戻ってきます。
+       */
+      gain: {
+        /** 何 LIKE で HP 1 ポイントか。端数はユーザーごとに繰り越します。 */
+        likesPerPoint: 10,
+        /** ギフトのコイン 1 につき攻撃力が何ポイントか。 */
+        attackPerCoin: 1,
+        /** コイン価値が取れなかったギフトでも、最低これだけは付きます。 */
+        minGiftPoints: 1,
+        /** シェア 1 回でドレインが何ポイントか。 */
+        sharePoints: 1,
+        /** フォローでスパイクが何ポイントか。 */
+        followPoints: 3,
+        /** フォローの棘は 1 人 1 回だけか (入り直しても増えない)。 */
+        followOncePerUser: true,
+        /**
+         * 入室したときの持ち物。「初めまして」のぶん。
+         *
+         * 棘を 1 本だけ渡します。**タダで見ているだけの人にも攻め手が要る**
+         * ためです (棘が無いと、いいねをいくら押しても敵に触れて削るだけの
+         * 置物になり、ランキングに絡めません)。
+         */
+        joinPoints: { hp: 3, spike: 1 },
+        /** 入室でもらえるのは 1 人 1 回だけか。 */
+        joinOncePerUser: true
+      },
+
+      /**
+       * ポイント → 実際の数値。
+       *
+       * max は「1 人が伸ばせる上限」です。上限が無いと、大きなギフトを
+       * 続けた 1 人だけが誰にも倒せなくなり、他の全員の行動が意味を失います。
+       * 上限に届いた力は画面に MAX と出ます。
+       */
+      stats: {
+        /** いいね。1 ポイントで最大 HP がこれだけ増えます。 */
+        hp:     { per: 70,   max: 9000, label: 'HP' },
+        /** ギフト。1 ポイントで攻撃力がこれだけ増えます。 */
+        attack: { per: 6,    max: 900,  label: 'ATK' },
+        /** シェア。1 ポイントで、与ダメージのこの割合を回復します。 */
+        drain:  { per: 0.05, max: 0.5,  label: 'DRAIN' },
+        /** フォロー。棘の本数のもとになります (長さと威力は HP で伸びます)。 */
+        spike:  { per: 1,    max: 12,   label: 'SPIKE' }
+      },
+
+      /**
+       * 360° のスパイク。
+       *
+       * **フォローした人だけ**がまといます。触れてきた相手 (敵でも他の人の
+       * 円でも) を刺し返すので、殴りに来るほうが損をします。
+       *
+       * 威力を最大 HP から出しているのは、**タダで戦える道を用意する**ためです。
+       * いいねしか押さない人でも、フォローさえしていれば棘で戦えます。
+       * ギフトの攻撃力とは別の伸び方なので、片方だけが強くはなりません。
+       */
+      spikes: {
+        /** 棘の基礎ダメージ。 */
+        damageBase: 6,
+        /** 最大 HP がこれだけ増えるごとに、棘のダメージが 1 増えます。 */
+        hpPerDamage: 90,
+        /**
+         * 本数による倍率 = base + 本数 × per (max まで)。
+         *
+         * 入室で 1 本、フォローで 3 本増えるので、**フォローすると棘の威力が
+         * ちょうど 2 倍**になります。本数を増やしても威力が変わらないと、
+         * フォローが見た目だけの飾りになってしまいます。
+         */
+        countScale: { base: 0.5, per: 0.25, max: 3 },
+        /** 同じ相手を刺せる間隔 (ミリ秒)。速すぎると触れただけで溶けます。 */
+        intervalMs: 400,
+        /** 棘が円の外へ出る長さ (半径の倍率)。 */
+        reach: 0.34,
+        /** 1 ポイントにつき何本描くか。 */
+        drawPerPoint: 3,
+        /** 描く本数の下限と上限。 */
+        minCount: 3,
+        maxCount: 18
+      },
+
+      /**
+       * 視聴者どうしの戦い (PvP)。
+       *
+       * 敵を狩るだけだと、隣の円は「ただ一緒に居るだけ」です。ぶつかれば
+       * 削り合うようにすると、**盤面のどこを見ても勝負が起きています**。
+       *
+       * ただし敵と同じ威力にはしません。それだと大きなギフトを贈った 1 人が
+       * 出てきた瞬間に全員が消え、他の人の行動が無意味になります。
+       * 削り合いが**見える速さ**で進むところまでに抑えてあります。
+       */
+      pvp: {
+        enabled: true,
+        /** 相手の円に対する攻撃力の倍率。 */
+        damageRatio: 0.3,
+        /** 殴り合う間隔 (ミリ秒)。円の攻撃間隔とは別に数えます。 */
+        intervalMs: 450,
+        /**
+         * 倒したときに入るポイント = 相手が貯めたポイント × これ。
+         *
+         * 相手の積み上げに比例させているので、**入りたての円を狩っても
+         * ほとんど点になりません**。狩り続ける旨みを消すためです。
+         */
+        pointsPerVictimPoint: 1.2,
+        /** それでも最低これだけは入ります。 */
+        minPoints: 5
+      },
 
       /**
        * 動き方。敵と同じで、既定は等速直線運動です。
@@ -654,46 +738,15 @@
       movement: { mode: 'linear' },
 
       /**
-       * レベル 1 のときの値。
+       * 大きさ。貯めたポイントの合計で決まります。
        *
-       * radius はプロフィール画像が見える大きさにしてあります。
-       * 小さくすると画面には多く入りますが、誰の円か分からなくなります。
+       *   radius = base.radius * (1 + 合計ポイント) ^ exp   (maxRadius まで)
        *
-       * 混んでくるとフィールドが広がる (画面はズームアウトする) ので、
-       * そのぶん円は小さく映ります。**顔とレベルが読めることを、
-       * 何個入るかより優先**して 1.5 倍にしてあります
-       * (field.expand の閾値もそれに合わせて上げてあります)。
+       * どの道で強くなった人も、強いほど大きく見えます。
        */
-      base: {
-        hp: 300,
-        attack: 36,
-        radius: 30,
-        speed: 165,
-        attackIntervalMs: 300
-      },
-
-      /**
-       * レベルから各値を出すときの指数。
-       *
-       *   value = base * level ^ exp
-       *
-       * レベル 100 で HP が約 20 倍、攻撃力が約 16 倍、大きさが約 2.4 倍、
-       * 速さが約 2.7 倍になります。さらに最大レベル中は maxBonus が掛かります。
-       */
-      scaling: {
-        hpExp: 0.65,
-        attackExp: 0.6,
-        radiusExp: 0.19,
-        /**
-         * 速さもレベルで上がります (以前は少し遅くなっていました)。
-         * 育つほど盤面を速く駆け回るので、育てた効果が見て分かります。
-         */
-        speedExp: 0.22,
-        /** base.radius 30 × 100^0.19 = 72。ここを変えると Lv100 だけ形が崩れます。 */
-        maxRadius: 72,
-        minSpeed: 120,
-        /** 速すぎて目で追えなくならないための上限。 */
-        maxSpeed: 700
+      size: {
+        exp: 0.13,
+        maxRadius: 72
       },
 
       limits: {
@@ -706,25 +759,19 @@
          */
         maxCircles: 400,
         /**
-         * 1 人が同時に持てる数。
+         * 1 人が同時に持てる数。**1 です。**
          *
-         * 普段は 1 つですが、最大レベルまで育てるたびに増えていきます。
-         * ここに達したときだけ、その人の一番古い円と入れ替わります。
-         * (連打する人が何十個も並べると、画面がその人だけになるためです)
-         * 最大レベルの円は時間で消えるので、普段はここに届きません。
-         *
-         * ここに達したあとの円は**消えずに順番待ちになります**。下の queue を参照。
+         * 何個も並べられると、連打した人だけで画面が埋まります。
+         * 1 つに絞れば、行動は「増やす」ではなく「育てる」になります。
          */
-        maxPerUser: 5,
-
+        maxPerUser: 1,
         /**
-         * 順番待ちの列の長さ。テトリスの NEXT と同じで、上限に達したあとに
-         * できた円はここに積まれ、フィールドの円が減ると順に入っていきます。
+         * 順番待ちの列の長さ。
          *
-         * 列も埋まったら、それ以上は増やさずに**列の最後の円が強くなります**。
-         * 送ったぶんが消えてなくなることはありません。
+         * 1 人 1 つになったので、普段は使いません (行動は今ある円に足されます)。
+         * 大砲が撃つ前にもう一度行動した場合は、大砲の中の 1 発に足されます。
          */
-        queue: 5
+        queue: 0
       }
     },
 
@@ -733,7 +780,7 @@
      *
      * 通常はイベントに入っているダイヤ数をそのまま使います。
      * 特定のギフトだけ重み付けを変えたいときに byId / byName へ書きます。
-     * 「コイン価値 -> 何レベル上がるか」は viewers.levels で決めます。
+     * 「コイン価値 -> 攻撃力が何ポイント増えるか」は viewers.gain で決めます。
      */
     gifts: {
       byId: {},          // { '5655': 1 }
@@ -840,7 +887,7 @@
           weight: 1,
           /**
            * 100 コインのギフトと同じレベルまで引き上げます。
-           * 換算はギフトと同じ式 (viewers.levels) を通すので、
+           * 換算はギフトと同じ式 (viewers.gain) を通すので、
            * ギフトの設定を変えればアイテムも一緒に変わります。
            * すでにそれより上のレベルの円は下がりません (全快だけします)。
            */

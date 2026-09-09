@@ -20,18 +20,21 @@ function quiet(overrides = {}) {
  * 個数を決め打ちにしないのは、フィールドの広さや比を変えたときに
  * 「混んでいる」の意味が変わってしまうためです。
  */
-function crowd(engine, level, target) {
+function crowd(engine, points, target) {
   for (let i = 0; i < 400 && engine.coverage() <= target; i += 1) {
-    if (!engine.spawnCircle({ ownerId: 'u' + i, ownerName: 'u' + i, level: level })) break;
+    if (!engine.spawnCircle({ ownerId: 'u' + i + '-' + engine.stage, ownerName: 'u', points: points })) break;
   }
   return engine.coverage();
 }
+
+/** よく育った円 (大きいので、少ない数で混みます)。 */
+const BIG = { hp: 120, attack: 120 };
 
 test('混んでくるとフィールドが広がる', () => {
   const { engine, advance, config } = quiet();
   assert.strictEqual(engine.field.width, config.field.width);
 
-  crowd(engine, 100, config.field.expand.growAt);
+  crowd(engine, BIG, config.field.expand.growAt);
   assert.ok(engine.coverage() > config.field.expand.growAt, 'テストが混んでいない');
 
   advance(config.field.expand.durationMs + 200, { steps: 140 });
@@ -43,7 +46,7 @@ test('混んでくるとフィールドが広がる', () => {
 
 test('広がるのは一瞬ではなく 2 秒かけて', () => {
   const { engine, advance, config } = quiet();
-  crowd(engine, 100, config.field.expand.growAt);
+  crowd(engine, BIG, config.field.expand.growAt);
 
   const total = engine.stageWidth(1) - config.field.width;
 
@@ -63,7 +66,7 @@ test('広がるのは一瞬ではなく 2 秒かけて', () => {
 test('広がるとき、中のものは一緒に広がる (位置関係が変わらない)', () => {
   const { engine } = quiet();
 
-  const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'u1', level: 1 });
+  const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'u1' });
   const enemy = engine.spawnEnemy('normal');
   const item = engine.spawnItem('power');
   circle.position.x = 200; circle.position.y = 400;
@@ -83,7 +86,7 @@ test('広がるとき、中のものは一緒に広がる (位置関係が変わ
 
 test('広がっても円は場外に出ない', () => {
   const { engine, advance, config } = quiet();
-  crowd(engine, 100, config.field.expand.growAt);
+  crowd(engine, BIG, config.field.expand.growAt);
   advance(config.field.expand.durationMs * 2, { steps: 240 });
 
   engine.circles.forEach((circle) => {
@@ -97,7 +100,7 @@ test('空いてくると元の広さに戻る', () => {
   const { engine, advance, config } = quiet();
   const expand = config.field.expand;
 
-  crowd(engine, 100, config.field.expand.growAt);
+  crowd(engine, BIG, config.field.expand.growAt);
   advance(expand.durationMs + expand.cooldownMs + 500, { steps: 400 });
   assert.strictEqual(engine.stage, 1, '広がっていない');
 
@@ -116,7 +119,7 @@ test('広がったり戻ったりを繰り返さない (変化のあとは少し
   const changes = [];
   engine.on('stage:change', (event) => changes.push(event.stage));
 
-  crowd(engine, 100, config.field.expand.growAt);
+  crowd(engine, BIG, config.field.expand.growAt);
   advance(config.field.expand.durationMs + 100, { steps: 130 });
   const afterFirst = changes.length;
 
@@ -130,7 +133,7 @@ test('段階には上限がある', () => {
   const expand = config.field.expand;
 
   for (let i = 0; i < expand.maxSteps + 3; i += 1) {
-    crowd(engine, 100, expand.growAt);
+    crowd(engine, BIG, expand.growAt);
     advance(expand.durationMs + expand.cooldownMs + 300, { steps: 400 });
   }
 
@@ -143,7 +146,7 @@ test('広がるときに知らせが出る (画面の告知用)', () => {
   const events = [];
   engine.on('stage:change', (event) => events.push(event));
 
-  crowd(engine, 100, config.field.expand.growAt);
+  crowd(engine, BIG, config.field.expand.growAt);
   advance(200, { steps: 12 });
 
   assert.strictEqual(events.length, 1);
@@ -155,7 +158,7 @@ test('広がるときに知らせが出る (画面の告知用)', () => {
 
 test('設定で止められる', () => {
   const { engine, advance, config } = quiet({ field: { expand: { enabled: false } } });
-  crowd(engine, 100, config.field.expand.growAt);
+  crowd(engine, BIG, config.field.expand.growAt);
   advance(20_000, { steps: 1200 });
 
   assert.strictEqual(engine.stage, 0);
