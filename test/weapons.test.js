@@ -151,11 +151,11 @@ test('武器は円の外側にだけ出る (プロフィール画像を隠さな
 
 test('武器の大きさは攻撃力に対して必ず増える (段の境目でも逆転しない)', () => {
   const w = weapons();
-  const full = makeConfig().viewers;
-  const max = full.base.attack + full.stats.attack.max;
+  const tiers = makeConfig().weapons.tiers;
+  const full = tiers[tiers.length - 1].minAttack;
   let previous = -1;
 
-  for (let attack = 0; attack <= max; attack += 10) {
+  for (let attack = 0; attack <= full; attack += 10) {
     const scale = w.scaleFor(attack);
     assert.ok(scale > previous, `攻撃力 ${attack} で武器が小さくなっている`);
     previous = scale;
@@ -163,10 +163,18 @@ test('武器の大きさは攻撃力に対して必ず増える (段の境目で
 
   const config = makeConfig().weapons;
   assert.strictEqual(w.scaleFor(0), config.minScale);
-  assert.strictEqual(w.scaleFor(max), config.maxScale);
+  assert.strictEqual(w.scaleFor(full), config.maxScale);
   // 範囲外を渡しても壊れない
   assert.strictEqual(w.scaleFor(-50), config.minScale);
   assert.strictEqual(w.scaleFor(99_999), config.maxScale);
+});
+
+test('攻撃力に上限が無くても、武器だけは最終段で止まる', () => {
+  // 武器まで比例させ続けると、隣の円を覆うほど伸びます。
+  // 円そのものは伸び続けるので、強さは大きさで伝わります。
+  const w = weapons();
+  const config = makeConfig().weapons;
+  assert.strictEqual(w.scaleFor(1e9), config.maxScale);
 });
 
 test('NPC の武器は本物より目立たない設定になっている', () => {

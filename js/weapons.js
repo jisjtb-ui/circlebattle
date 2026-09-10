@@ -315,15 +315,19 @@
   /**
    * その攻撃力の武器の大きさ (円の半径に対する倍率)。
    *
-   * 攻撃力に対してまっすぐ増えます。段ごとの階段にしないのは、
-   * 段の終わりの武器が次の段の頭より大きく見えてしまうと、
-   * 「強いほど強そう」が崩れるためです。
+   * 攻撃力に対してまっすぐ増え、**最終段に届いたところで止まります**。
+   * 攻撃力に上限は無いので、そのまま比例させると武器だけが際限なく伸びて
+   * 隣の円を覆います。円そのものは伸び続けるので、強さは大きさで伝わります。
+   *
+   * 段ごとの階段にしないのは、段の終わりの武器が次の段の頭より大きく
+   * 見えてしまうと、「強いほど強そう」が崩れるためです。
    */
   Weapons.prototype.scaleFor = function (attack) {
-    var max = this.config.viewers.base.attack + this.config.viewers.stats.attack.max;
-    var value = Math.max(0, Math.min(max, attack));
+    var tiers = this.settings.tiers;
+    var full = tiers[tiers.length - 1].minAttack || 1;
+    var value = Math.max(0, Math.min(full, attack));
     var min = this.settings.minScale;
-    return min + (value / max) * (this.settings.maxScale - min);
+    return min + (value / full) * (this.settings.maxScale - min);
   };
 
   /** 次の段まであと何ぶんの攻撃力か (0 なら最終段)。 */

@@ -230,10 +230,9 @@ test('保有上限 (1 人 1 つ) は大砲の中のぶんも数える', () => {
 
   drain(a);
   assert.strictEqual(a.engine.circles.filter((c) => c.ownerId === 'u1').length, cap);
-  // 送ったぶんは全部、その 1 つの円へ乗ります (上限まで)
-  const cape = a.engine.maxPointsOf('attack');
-  assert.strictEqual(a.engine.circles.find((c) => c.ownerId === 'u1').points.attack, cape,
-    '送ったギフトのぶんが乗っていない');
+  // 送ったぶんは全部、その 1 つの円へ乗ります (頭打ちはありません)
+  assert.strictEqual(a.engine.circles.find((c) => c.ownerId === 'u1').points.attack,
+    (cap + 3) * 100, '送ったギフトのぶんが乗っていない');
 });
 
 test('入っただけでは点が入らない', () => {

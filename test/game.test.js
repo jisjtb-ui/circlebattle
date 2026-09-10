@@ -134,7 +134,7 @@ test('円の情報が仕様どおり揃っている', () => {
   assert.strictEqual(typeof circle.velocity.y, 'number');
 });
 
-test('ポイントが増えると HP も攻撃力も上がる (上限あり)', () => {
+test('ポイントが増えると HP も攻撃力も上がる (頭打ちなし)', () => {
   const viewers = makeConfig().viewers;
   const weak = statsForPoints({}, viewers);
   const strong = statsForPoints({ hp: 20, attack: 20 }, viewers);
@@ -142,11 +142,26 @@ test('ポイントが増えると HP も攻撃力も上がる (上限あり)', (
 
   assert.ok(strong.hp > weak.hp && strong.attack > weak.attack);
   assert.ok(strong.radius > weak.radius);
-  assert.ok(huge.radius <= viewers.size.maxRadius, '大きさの上限を超えている');
-  assert.ok(huge.hp <= viewers.base.hp + viewers.stats.hp.max, 'HP の上限を超えている');
-  assert.ok(huge.attack <= viewers.base.attack + viewers.stats.attack.max);
-  assert.ok(huge.drain <= viewers.stats.drain.max);
-  assert.ok(huge.spikes <= viewers.stats.spike.max);
+
+  // どこまでも伸びる。止まるところはありません
+  assert.ok(huge.hp > strong.hp * 1000, 'HP が途中で止まっている');
+  assert.ok(huge.attack > strong.attack * 1000, '攻撃力が途中で止まっている');
+  assert.ok(huge.radius > strong.radius, '大きさが途中で止まっている');
+
+  // 割合だけは 1 を超えない (超えると殴るほど回復して倒せなくなる)
+  assert.ok(huge.drain < 1, `ドレインが ${huge.drain}`);
+});
+
+test('大きさの伸び方は緩やか (画面を埋め尽くさない)', () => {
+  const viewers = makeConfig().viewers;
+  const wide = 1080;
+
+  // ポイントを 1 万倍にしても、半径は 3 倍ほどにしかなりません
+  const some = statsForPoints({ hp: 100 }, viewers).radius;
+  const huge = statsForPoints({ hp: 1_000_000 }, viewers).radius;
+
+  assert.ok(huge > some, '伸びていない');
+  assert.ok(huge < wide / 4, `100 万ポイントで半径 ${huge.toFixed(0)} は大きすぎる`);
 });
 
 test('力ごとに別々に伸びる (混ざらない)', () => {

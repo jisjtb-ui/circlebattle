@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { setup, makeConfig } = require('./helpers.js');
+const { statsForPoints } = require('../js/game.js');
 
 const circlesOf = (engine, ownerId) => engine.circles.filter((c) => c.ownerId === ownerId);
 
@@ -60,7 +61,10 @@ test('シェアでドレインが付く', () => {
 
   const circle = circlesOf(engine, 'u1')[0];
   assert.strictEqual(circle.points.drain, 2);
-  assert.ok(Math.abs(circle.drain - 2 * config.viewers.stats.drain.per) < 1e-9);
+  assert.ok(circle.drain > 0 && circle.drain < 1);
+  // 1 回のときより必ず増えている (何回シェアしても効く)
+  const one = statsForPoints({ drain: 1 }, config.viewers).drain;
+  assert.ok(circle.drain > one, '2 回目のシェアが効いていない');
 });
 
 test('フォローでスパイクが付く (1 人 1 回だけ)', () => {
@@ -147,23 +151,39 @@ test('LIKE の端数は他人と混ざらない', () => {
   assert.strictEqual(engine.circles.length, 0);
 });
 
-test('それぞれの力には上限がある', () => {
+test('力に頭打ちが無い (押した / 贈ったぶんは必ず数字になる)', () => {
   const { engine, send, config } = setup();
   const user = { id: 'u1', uniqueId: 'taro' };
   const stats = config.viewers.stats;
 
-  send({ type: 'gift', user, diamondCount: 100_000, repeatCount: 10 });
+  send({ type: 'gift', user, diamondCount: 100_000 });
   send({ type: 'like', user, count: 1_000_000 });
 
-  // 上限はポイント単位で切り上がるので、1 ポイントぶん手前まで届きます
   const circle = circlesOf(engine, 'u1')[0];
-  const atkCap = config.viewers.base.attack + stats.attack.max;
-  const hpCap = config.viewers.base.hp + stats.hp.max;
-  assert.ok(circle.attack <= atkCap && circle.attack > atkCap - stats.attack.per,
-    `攻撃力が上限で止まっていない (${circle.attack})`);
-  assert.ok(circle.maxHp <= hpCap && circle.maxHp > hpCap - stats.hp.per,
-    `HP が上限で止まっていない (${circle.maxHp})`);
-  assert.ok(circle.radius <= config.viewers.size.maxRadius);
+  assert.strictEqual(circle.points.attack, 100_000);
+  assert.strictEqual(circle.points.hp, 100_000);
+  assert.strictEqual(circle.attack, config.viewers.base.attack + 100_000 * stats.attack.per);
+  assert.strictEqual(circle.maxHp, config.viewers.base.hp + 100_000 * stats.hp.per);
+
+  // さらに送っても、まだ増える
+  const before = { hp: circle.maxHp, attack: circle.attack, radius: circle.radius };
+  send({ type: 'gift', user, diamondCount: 100_000 });
+  send({ type: 'like', user, count: 1_000_000 });
+  assert.ok(circle.attack > before.attack, '攻撃力が止まっている');
+  assert.ok(circle.maxHp > before.hp, 'HP が止まっている');
+  assert.ok(circle.radius > before.radius, '大きさが止まっている');
+});
+
+test('ドレインだけは 1 を超えない (超えると誰にも倒せなくなる)', () => {
+  const { engine, send } = setup();
+  const user = { id: 'u1', uniqueId: 'taro' };
+
+  for (let i = 0; i < 500; i += 1) send({ type: 'share', user });
+
+  const circle = circlesOf(engine, 'u1')[0];
+  assert.strictEqual(circle.points.drain, 500, 'シェアぶんが記録されていない');
+  assert.ok(circle.drain < 1, `ドレインが ${circle.drain} になっている`);
+  assert.ok(circle.drain > 0.9, '500 回シェアしたのに効いていない');
 });
 
 test('入室すると少しの HP と棘 1 本をもらえる (1 人 1 回だけ)', () => {
@@ -430,18 +450,16 @@ test('力が増えたことが通知される (音と表示のため)', () => {
   assert.strictEqual(grew[1].sourceEvent, 'GIFT');
 });
 
-test('上限に届いた力を送っても、円は増えないし壊れない', () => {
-  const { engine, session, send } = setup();
-  const grew = [];
-  session.on('grew', (event) => grew.push(event));
+test('とんでもない量を送っても、円は増えないし壊れない', () => {
+  const { engine, send } = setup();
   const user = { id: 'u1', uniqueId: 'taro' };
 
-  send({ type: 'gift', user, diamondCount: 100_000 });   // 一気に上限へ
-  const capped = grew.length;
-  send({ type: 'gift', user, diamondCount: 100_000 });   // もう増えない
+  for (let i = 0; i < 20; i += 1) send({ type: 'gift', user, diamondCount: 1_000_000 });
 
-  assert.strictEqual(circlesOf(engine, 'u1').length, 1, '円が増えている');
-  assert.strictEqual(grew.length, capped, '増えていないのに通知が出ている');
+  const mine = circlesOf(engine, 'u1');
+  assert.strictEqual(mine.length, 1, '円が増えている');
+  assert.ok(Number.isFinite(mine[0].attack) && Number.isFinite(mine[0].radius));
+  assert.ok(mine[0].radius > 0);
 });
 
 test('他の人の円は自分の円に影響しない', () => {

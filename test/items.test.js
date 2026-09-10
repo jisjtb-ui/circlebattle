@@ -138,7 +138,7 @@ test('拾って弱くなる値は 1 つも無い', () => {
   });
 });
 
-test('すでに攻撃力が上限の円が POWER を拾っても弱くならない (全快はする)', () => {
+test('とても強い円が POWER を拾っても弱くならない (全快はする)', () => {
   const { engine, advance } = quiet();
   const circle = engine.spawnCircle({ ownerId: 'u1', ownerName: 'taro', points: { attack: 100_000 } });
   circle.hp = 10;
@@ -149,9 +149,10 @@ test('すでに攻撃力が上限の円が POWER を拾っても弱くならな�
   circle.position.y = item.position.y;
   advance(100, { steps: 3 });
 
-  assert.strictEqual(circle.power, before.power);
-  assert.strictEqual(circle.attack, before.attack);
-  assert.strictEqual(circle.speed, before.speed);
+  // 上限が無いので、拾ったぶんはちゃんと足されます (下がらないことが大事)
+  assert.ok(circle.power > before.power, '拾ったのに増えていない');
+  assert.ok(circle.attack > before.attack);
+  assert.ok(circle.speed >= before.speed);
   assert.strictEqual(circle.hp, circle.maxHp, '全快していない');
 });
 

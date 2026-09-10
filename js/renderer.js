@@ -53,12 +53,28 @@
    * 大きい数を短く。円の中に収める必要があるので、桁を増やしません。
    *
    *   980 -> '980'   2140 -> '2.1k'   12400 -> '12k'
+   *   3200000 -> '3.2M'   7400000000 -> '7.4B'
+   *
+   * **力にも HP にも上限がありません。** 桁で伸ばすと、育った円ほど
+   * 数字が小さくなって読めなくなるので、単位で畳みます。
    */
+  var UNITS = [
+    { at: 1e9, suffix: 'B' },
+    { at: 1e6, suffix: 'M' },
+    { at: 1e3, suffix: 'k' }
+  ];
+
   function short(value) {
     var n = Math.max(0, Math.round(value));
     if (n < 1000) return String(n);
-    if (n < 10000) return (n / 1000).toFixed(1) + 'k';
-    return Math.round(n / 1000) + 'k';
+
+    for (var i = 0; i < UNITS.length; i += 1) {
+      var unit = UNITS[i];
+      if (n < unit.at) continue;
+      var scaled = n / unit.at;
+      return (scaled < 10 ? scaled.toFixed(1) : String(Math.round(scaled))) + unit.suffix;
+    }
+    return String(n);
   }
 
   /**
@@ -654,14 +670,17 @@
    * (実測で描画時間の 4 割)。絵にしておけば貼るだけで済みます。
    */
   Renderer.prototype._levelBadge = function (power) {
-    if (!this._badges) this._badges = {};
-    if (this._badges[power]) return this._badges[power];
-    if (!this.doc) return null;
-
     // 1000 を超えたら 1.2k のように縮めます。桁が増えると、円の中で
     // 文字が小さくなって結局読めません。
+    var text = short(power);
+
+    // **覚えるのは数字ではなく、出す文字のほうです。** 力に上限が無いので、
+    // 数字ごとに 1 枚ずつ作るとキャッシュが際限なく増えます。
+    if (!this._badges) this._badges = {};
+    if (this._badges[text]) return this._badges[text];
+    if (!this.doc) return null;
+
     var maxed = false;
-    var text = power >= 1000 ? (power / 1000).toFixed(1) + 'k' : String(power);
 
     // 元絵は大きめに作り、貼るときに縮めます (拡大するとぼやけるため)
     var font = 44;
@@ -692,8 +711,8 @@
     ctx.fillStyle = maxed ? '#1b1200' : '#ffffff';
     ctx.fillText(text, width / 2, height / 2 + 1);
 
-    this._badges[power] = { canvas: canvas, ratio: width / height };
-    return this._badges[power];
+    this._badges[text] = { canvas: canvas, ratio: width / height };
+    return this._badges[text];
   };
 
   /**

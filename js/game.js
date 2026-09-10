@@ -50,18 +50,41 @@
     return { hp: 0, attack: 0, drain: 0, spike: 0 };
   }
 
-  /** ポイントを上限に収める。 */
+  /** 1 つの力だけを持ったポイント。 */
+  function defineOne(key, points) {
+    var out = emptyPoints();
+    out[key] = points;
+    return out;
+  }
+
+  /**
+   * ポイントを整える (負の数と端数だけ落とします)。
+   *
+   * **上限はありません。** 押した / 贈ったぶんは必ず数字になります。
+   * 「これ以上やっても同じ」が見えた瞬間、その人の行動は止まるためです。
+   */
   function clampPoints(points, viewers) {
-    var stats = viewers.stats;
     var out = emptyPoints();
     var source = points || out;
     for (var key in out) {
       if (!Object.prototype.hasOwnProperty.call(out, key)) continue;
-      var value = Math.max(0, Math.floor(Number(source[key]) || 0));
-      var cap = stats[key] && stats[key].max > 0 ? Math.floor(stats[key].max / stats[key].per) : Infinity;
-      out[key] = Math.min(value, cap);
+      out[key] = Math.max(0, Math.floor(Number(source[key]) || 0));
     }
     return out;
+  }
+
+  /**
+   * 与ダメージを回復に回す割合 (シェア)。
+   *
+   *   drain = 1 - 1 / (1 + ポイント × per)
+   *
+   * 足し算にすると 1 を超えてしまい、「殴るほど回復が増えて減らない」
+   * 円ができます。1 へ近づけるだけにすれば、いくら伸ばしても壊れず、
+   * それでも**伸ばした回数ぶんは必ず効きます**。
+   */
+  function drainOf(points, viewers) {
+    var per = viewers.stats.drain.per;
+    return 1 - 1 / (1 + Math.max(0, points) * per);
   }
 
   /**
@@ -84,13 +107,14 @@
     var p = clampPoints(points, viewers);
     var total = p.hp + p.attack + p.drain + p.spike;
 
-    var maxHp = Math.round(base.hp + Math.min(p.hp * stats.hp.per, stats.hp.max));
+    var maxHp = Math.round(base.hp + p.hp * stats.hp.per);
+    var spikes = p.spike * stats.spike.per;
     return {
       points: p,
       hp: maxHp,
-      attack: Math.round(base.attack + Math.min(p.attack * stats.attack.per, stats.attack.max)),
-      drain: Math.min(p.drain * stats.drain.per, stats.drain.max),
-      spikes: Math.min(p.spike * stats.spike.per, stats.spike.max),
+      attack: Math.round(base.attack + p.attack * stats.attack.per),
+      drain: drainOf(p.drain, viewers),
+      spikes: spikes,
       /**
        * 棘 1 回ぶんのダメージ。
        *
@@ -99,9 +123,8 @@
        */
       spikeDamage: (viewers.spikes.damageBase + maxHp / viewers.spikes.hpPerDamage) *
         Math.min(viewers.spikes.countScale.max,
-          viewers.spikes.countScale.base +
-          Math.min(p.spike * stats.spike.per, stats.spike.max) * viewers.spikes.countScale.per),
-      radius: Math.min(base.radius * Math.pow(1 + total, size.exp), size.maxRadius),
+          viewers.spikes.countScale.base + spikes * viewers.spikes.countScale.per),
+      radius: base.radius * Math.pow(1 + total, size.exp),
       speed: base.speed,
       attackIntervalMs: base.attackIntervalMs
     };
@@ -165,6 +188,7 @@
   }
 
   BattleEngine.statsForPoints = statsForPoints;
+  BattleEngine.drainOf = drainOf;
   BattleEngine.attackPointsFromGift = attackPointsFromGift;
 
   /** ギフトのコイン価値 -> 攻撃力のポイント。GIFT もアイテムもここを通します。 */
@@ -172,11 +196,14 @@
     return attackPointsFromGift(coins, this.config.viewers);
   };
 
-  /** 1 人が伸ばせるポイントの上限 (その力が MAX かどうかの判定に使います)。 */
-  BattleEngine.prototype.maxPointsOf = function (key) {
-    var stat = this.config.viewers.stats[key];
-    if (!stat || !(stat.max > 0)) return Infinity;
-    return Math.floor(stat.max / stat.per);
+  /**
+   * ポイント -> その力の実際の値。画面や設定の確認用です。
+   *
+   * 上限はありません。伸ばした回数ぶん、必ず数字になります。
+   */
+  BattleEngine.prototype.statValueOf = function (key, points) {
+    return statsForPoints(defineOne(key, points), this.config.viewers)[
+      key === 'spike' ? 'spikes' : key];
   };
 
   /** その円の武器の段。攻撃力で決まります。 */
